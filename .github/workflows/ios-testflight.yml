@@ -58,8 +58,12 @@ jobs:
         run: |
           set -eo pipefail
           mkdir -p build/ios
-          "$GODOT_BIN" --headless --export-release "iOS" build/ios/deskfeel.ipa
-          echo "--- build/ios ---"; ls -R build/ios | head -60
+          # Godot 导出时会顺带用 xcodebuild 归档，但没有 API-key 授权、签名默认冲突会失败。
+          # 我们只需要它生成好 Xcode 工程，随后自己用 ASC 密钥归档，故忽略其内部构建失败。
+          "$GODOT_BIN" --headless --export-release "iOS" build/ios/deskfeel.ipa || true
+          XCPROJ=$(find build/ios -maxdepth 2 -name '*.xcodeproj' | head -1)
+          [ -n "$XCPROJ" ] || { echo "::error::Godot 未生成 Xcode 工程"; exit 1; }
+          echo "--- build/ios ---"; ls -R build/ios | head -80
 
       - name: Set build number + archive & upload
         env:
@@ -82,6 +86,7 @@ jobs:
             -archivePath "$RUNNER_TEMP/DeskFeel-ios.xcarchive" \
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             CODE_SIGN_STYLE=Automatic DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_IDENTITY="Apple Development" PROVISIONING_PROFILE_SPECIFIER="" \
             -allowProvisioningUpdates -authenticationKeyPath "$ASC_KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID" archive
 
