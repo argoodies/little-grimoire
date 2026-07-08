@@ -14,8 +14,8 @@ const TOKEN_RADIUS := 0.22
 const TOKEN_HEIGHT := 0.014                 # 纸板厚度
 const BUTTON_RADIUS := 0.085                # 小纽扣半径
 const BUTTON_HEIGHT := 0.012
-# 3 枚小纽扣的位置
-const BUTTONS := [Vector3(-0.42, 0.0, -0.05), Vector3(0.0, 0.0, -0.05), Vector3(0.42, 0.0, -0.05)]
+# 3 枚小纽扣：板面下方中间一排（z 靠近前缘、x 居中）
+const BUTTONS := [Vector3(-0.34, 0.0, 1.05), Vector3(0.0, 0.0, 1.05), Vector3(0.34, 0.0, 1.05)]
 const MAX_TILT_DEG := 22.0                 # 重力最大倾角
 const MOVE_SOUND_STEP := 0.07              # 拖动每滑过这么远响一次“哒”
 const ROT_SENS := 0.0038                   # 拖拽旋转灵敏度（弧度/像素）
@@ -149,11 +149,13 @@ func _spawn_tokens() -> void:
 	for data in TOKENS:
 		_make_token(data, true)
 		_make_token(data, false)
+	# 每面（正/反）下方中间各一排 3 枚。
 	for bpos in BUTTONS:
-		_make_button(bpos)
+		_make_button(bpos, true)
+		_make_button(bpos, false)
 
 # 小纽扣：紫色小圆片，正反两面贴紫绒面，可拖拽（无浮标）。
-func _make_button(pos: Vector3) -> void:
+func _make_button(pos: Vector3, is_top: bool) -> void:
 	var body := StaticBody3D.new()
 	var mesh := MeshInstance3D.new()
 	var cyl := CylinderMesh.new()
@@ -178,7 +180,7 @@ func _make_button(pos: Vector3) -> void:
 	col.shape = shape
 	body.add_child(col)
 
-	var base_y := TOP_SURF + BUTTON_HEIGHT * 0.5
+	var base_y := (TOP_SURF + BUTTON_HEIGHT * 0.5) if is_top else -(TOP_SURF + BUTTON_HEIGHT * 0.5)
 	body.position = Vector3(pos.x, base_y, pos.z)
 	body.set_meta("token", true)
 	body.set_meta("plane_y", base_y)
