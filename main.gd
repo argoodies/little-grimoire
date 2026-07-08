@@ -16,9 +16,9 @@ const BUTTON_RADIUS := 0.085                # 小纽扣半径
 const BUTTON_HEIGHT := 0.012
 # 3 枚小纽扣：板面下方边缘附近一排（z 靠近前缘 1.25、x 居中）；1 拼图 + 2 红书。
 const BUTTONS := [
-	{"pos": Vector3(-0.34, 0.0, 1.25), "face": "res://textures/button_puzzle.png"},
-	{"pos": Vector3(0.0, 0.0, 1.25), "face": "res://textures/button_book.png"},
-	{"pos": Vector3(0.34, 0.0, 1.25), "face": "res://textures/button_book.png"},
+	{"pos": Vector3(-0.34, 0.0, 1.25), "face": "res://textures/button_puzzle.png", "label": "醉酒"},
+	{"pos": Vector3(0.0, 0.0, 1.25), "face": "res://textures/button_book.png", "label": "选择"},
+	{"pos": Vector3(0.34, 0.0, 1.25), "face": "res://textures/button_book.png", "label": "即将死亡"},
 ]
 const MAX_TILT_DEG := 22.0                 # 重力最大倾角
 const MOVE_SOUND_STEP := 0.07              # 拖动每滑过这么远响一次“哒”
@@ -56,10 +56,23 @@ func _ready() -> void:
 	_spawn_tokens()
 
 func _load_font() -> void:
-	# 中文用 Noto Sans SC 子集，emoji 回退到 Noto Color Emoji 子集（彩色）。
+	# 中文小字用 Noto Sans SC 子集（已含令牌名与纽扣文案）。不再用 emoji。
 	_font = load("res://fonts/NotoSansSC-subset.ttf")
-	var emoji: FontFile = load("res://fonts/NotoColorEmoji-subset.ttf")
-	_font.fallbacks = [emoji]
+
+# 小字标签：始终朝相机，贴在圆片下方边缘（背面镜像）。
+func _add_label(parent: Node3D, text: String, is_top: bool, y_off: float, z_off: float, fsize: int) -> void:
+	var lbl := Label3D.new()
+	lbl.text = text
+	lbl.font = _font
+	lbl.font_size = fsize
+	lbl.pixel_size = 0.0016
+	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	lbl.modulate = Color(1, 1, 1)
+	lbl.outline_size = 10
+	lbl.outline_modulate = Color(0, 0, 0, 0.75)
+	var s := 1.0 if is_top else -1.0
+	lbl.position = Vector3(0.0, s * y_off, s * z_off)
+	parent.add_child(lbl)
 
 # 令牌面材质：圆外已透明，用 alpha scissor 得到干净的圆形边缘。
 func _face_material(path: String) -> StandardMaterial3D:
@@ -187,6 +200,9 @@ func _make_button(data: Dictionary, is_top: bool) -> void:
 	col.shape = shape
 	body.add_child(col)
 
+	# 纽扣小字，贴在纽扣下方边缘外侧。
+	_add_label(body, data.label, is_top, BUTTON_HEIGHT * 0.5 + 0.01, BUTTON_RADIUS + 0.055, 24)
+
 	var base_y := (TOP_SURF + BUTTON_HEIGHT * 0.5) if is_top else -(TOP_SURF + BUTTON_HEIGHT * 0.5)
 	# 背面那份 z 取反：翻面（180°）后它们同样落在该面的下方边缘。
 	var z: float = data.pos.z if is_top else -data.pos.z
@@ -225,21 +241,10 @@ func _make_token(data: Dictionary, is_top: bool) -> void:
 	col.shape = shape
 	body.add_child(col)
 
-	# 令牌上方的浮标：emoji + 中文名，始终朝向相机。
-	var lbl := Label3D.new()
-	lbl.text = "%s\n%s" % [data.emoji, data.name]
-	lbl.font = _font
-	lbl.font_size = 64
-	lbl.pixel_size = 0.0016
-	lbl.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	lbl.modulate = Color(1, 1, 1)
-	lbl.outline_size = 14
-	lbl.outline_modulate = Color(0, 0, 0, 0.7)
-	# 令牌所在面的高度：正面坐在毛毯面上，背面坐在木板底面（浮标随之在外侧）。
+	# 令牌所在面的高度：正面坐在毛毯面上，背面坐在木板底面。
 	var base_y := (TOP_SURF + TOKEN_HEIGHT * 0.5) if is_top else -(TOP_SURF + TOKEN_HEIGHT * 0.5)
-	var label_y := (TOKEN_HEIGHT * 0.5 + 0.22) if is_top else -(TOKEN_HEIGHT * 0.5 + 0.22)
-	lbl.position = Vector3(0.0, label_y, 0.0)
-	body.add_child(lbl)
+	# 名字：小字，靠令牌下方边缘。
+	_add_label(body, data.name, is_top, TOKEN_HEIGHT * 0.5 + 0.02, TOKEN_RADIUS * 0.62, 34)
 
 	body.position = Vector3(data.pos.x, base_y, data.pos.z)
 	body.set_meta("token", true)
