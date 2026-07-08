@@ -189,7 +189,7 @@ func _make_button(data: Dictionary, is_top: bool) -> void:
 
 	var base_y := (TOP_SURF + BUTTON_HEIGHT * 0.5) if is_top else -(TOP_SURF + BUTTON_HEIGHT * 0.5)
 	# 背面那份 z 取反：翻面（180°）后它们同样落在该面的下方边缘。
-	var z := data.pos.z if is_top else -data.pos.z
+	var z: float = data.pos.z if is_top else -data.pos.z
 	body.position = Vector3(data.pos.x, base_y, z)
 	body.set_meta("token", true)
 	body.set_meta("plane_y", base_y)
