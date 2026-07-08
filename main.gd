@@ -83,7 +83,7 @@ func _face_material(path: String) -> StandardMaterial3D:
 	m.cull_mode = BaseMaterial3D.CULL_DISABLED
 	m.roughness = 1.0            # 纸类：完全漫反射
 	m.metallic = 0.0
-	m.metallic_specular = 0.1    # 压低镜面反射，去掉高光
+	m.metallic_specular = 0.0    # 压低镜面反射，去掉高光
 	return m
 
 # 在圆片某一面贴一张躺平的图（quad），y_off 是相对中心的高度，rot_x 决定朝上/朝下，radius 决定大小。
@@ -185,7 +185,7 @@ func _make_button(data: Dictionary, is_top: bool) -> void:
 	mat.albedo_color = Color(0.26, 0.15, 0.36)   # 深紫边
 	mat.roughness = 1.0
 	mat.metallic = 0.0
-	mat.metallic_specular = 0.1
+	mat.metallic_specular = 0.0
 	mesh.material_override = mat
 	body.add_child(mesh)
 
@@ -225,7 +225,7 @@ func _make_token(data: Dictionary, is_top: bool) -> void:
 	mat.albedo_color = Color(0.86, 0.79, 0.64).lerp(data.color, 0.25)   # 纸板米色
 	mat.roughness = 1.0
 	mat.metallic = 0.0
-	mat.metallic_specular = 0.1
+	mat.metallic_specular = 0.0
 	mesh.material_override = mat
 	body.add_child(mesh)
 
