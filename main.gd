@@ -12,7 +12,6 @@ const TOKEN_TOP_Y := TOKEN_HEIGHT * 0.5
 const MAX_TILT_DEG := 22.0                 # 重力最大倾角
 const MOVE_SOUND_STEP := 0.07              # 拖动每滑过这么远响一次“哒”
 const ROT_SENS := 0.006                    # 拖拽旋转灵敏度（弧度/像素）
-const MAX_PITCH := 85.0                    # 俯仰上限（度）
 
 # 三枚令牌：emoji、中文名、顶面色。
 const TOKENS := [
@@ -173,9 +172,9 @@ func _make_token(data: Dictionary, is_top: bool) -> void:
 	body.set_meta("plane_y", base_y)   # 拖拽时贴着自己这一面移动
 	_table.add_child(body)
 
-# 拖拽板子/空白 → 累积旋转板子：上下拖=俯仰(绕X)，左右拖=自转(绕Y)。
+# 拖拽板子/空白 → 累积旋转板子：上下拖=俯仰(绕X)，左右拖=自转(绕Y)。两轴均无限旋转。
 func _rotate_by(delta: Vector2) -> void:
-	_manual_rot.x = clampf(_manual_rot.x - delta.y * ROT_SENS, -deg_to_rad(MAX_PITCH), deg_to_rad(MAX_PITCH))
+	_manual_rot.x -= delta.y * ROT_SENS
 	_manual_rot.y += delta.x * ROT_SENS
 
 ## 每帧：板子 = 重力倾斜（有传感器才动）+ 拖拽累积的手动旋转。
@@ -188,7 +187,6 @@ func _process(delta: float) -> void:
 		# 手机怎么斜板子怎么斜；真机上若方向相反把符号翻一下。
 		grav = Vector3(deg_to_rad(MAX_TILT_DEG) * gz, 0.0, deg_to_rad(-MAX_TILT_DEG) * gx)
 	var target := Vector3(grav.x + _manual_rot.x, _manual_rot.y, grav.z)
-	target.x = clampf(target.x, -deg_to_rad(MAX_PITCH), deg_to_rad(MAX_PITCH))
 	var weight := 1.0 - pow(0.002, delta)     # 平滑趋近
 	_table.rotation = _table.rotation.lerp(target, weight)
 
