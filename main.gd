@@ -12,6 +12,10 @@ const TOP_SURF := MODEL_HY * BOARD_SCALE    # 缩放后毛毯面高度
 const BOARD_SIZE := Vector2(MODEL_HX * 2.0 * BOARD_SCALE, MODEL_HZ * 2.0 * BOARD_SCALE)
 const TOKEN_RADIUS := 0.22
 const TOKEN_HEIGHT := 0.014                 # 纸板厚度
+const BUTTON_RADIUS := 0.085                # 小纽扣半径
+const BUTTON_HEIGHT := 0.012
+# 3 枚小纽扣的位置
+const BUTTONS := [Vector3(-0.42, 0.0, -0.05), Vector3(0.0, 0.0, -0.05), Vector3(0.42, 0.0, -0.05)]
 const MAX_TILT_DEG := 22.0                 # 重力最大倾角
 const MOVE_SOUND_STEP := 0.07              # 拖动每滑过这么远响一次“哒”
 const ROT_SENS := 0.0038                   # 拖拽旋转灵敏度（弧度/像素）
@@ -64,11 +68,11 @@ func _face_material(path: String) -> StandardMaterial3D:
 	m.metallic = 0.0
 	return m
 
-# 在令牌某一面贴一张躺平的令牌图（quad），y_off 是相对令牌中心的高度，rot_x 决定朝上/朝下。
-func _add_face(parent: Node3D, y_off: float, rot_x: float, mat: StandardMaterial3D) -> void:
+# 在圆片某一面贴一张躺平的图（quad），y_off 是相对中心的高度，rot_x 决定朝上/朝下，radius 决定大小。
+func _add_face(parent: Node3D, y_off: float, rot_x: float, mat: StandardMaterial3D, radius: float) -> void:
 	var face := MeshInstance3D.new()
 	var quad := QuadMesh.new()
-	quad.size = Vector2(TOKEN_RADIUS * 2.0, TOKEN_RADIUS * 2.0)
+	quad.size = Vector2(radius * 2.0, radius * 2.0)
 	face.mesh = quad
 	face.material_override = mat
 	face.rotation_degrees = Vector3(rot_x, 0.0, 0.0)
@@ -145,6 +149,40 @@ func _spawn_tokens() -> void:
 	for data in TOKENS:
 		_make_token(data, true)
 		_make_token(data, false)
+	for bpos in BUTTONS:
+		_make_button(bpos)
+
+# 小纽扣：紫色小圆片，正反两面贴紫绒面，可拖拽（无浮标）。
+func _make_button(pos: Vector3) -> void:
+	var body := StaticBody3D.new()
+	var mesh := MeshInstance3D.new()
+	var cyl := CylinderMesh.new()
+	cyl.top_radius = BUTTON_RADIUS
+	cyl.bottom_radius = BUTTON_RADIUS
+	cyl.height = BUTTON_HEIGHT
+	mesh.mesh = cyl
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.26, 0.15, 0.36)   # 深紫边
+	mat.roughness = 0.95
+	mesh.material_override = mat
+	body.add_child(mesh)
+
+	var fmat := _face_material("res://textures/button_face.png")
+	_add_face(body, BUTTON_HEIGHT * 0.5 + 0.0006, -90.0, fmat, BUTTON_RADIUS)
+	_add_face(body, -BUTTON_HEIGHT * 0.5 - 0.0006, 90.0, fmat, BUTTON_RADIUS)
+
+	var col := CollisionShape3D.new()
+	var shape := CylinderShape3D.new()
+	shape.radius = BUTTON_RADIUS
+	shape.height = BUTTON_HEIGHT
+	col.shape = shape
+	body.add_child(col)
+
+	var base_y := TOP_SURF + BUTTON_HEIGHT * 0.5
+	body.position = Vector3(pos.x, base_y, pos.z)
+	body.set_meta("token", true)
+	body.set_meta("plane_y", base_y)
+	_table.add_child(body)
 
 func _make_token(data: Dictionary, is_top: bool) -> void:
 	var body := StaticBody3D.new()
@@ -165,8 +203,8 @@ func _make_token(data: Dictionary, is_top: bool) -> void:
 
 	# 各角色自己的牌面（合成在圆片上），贴在正反两面；圆形已在贴图里透明切好。
 	var fmat := _face_material(data.face)
-	_add_face(body, TOKEN_HEIGHT * 0.5 + 0.0008, -90.0, fmat)
-	_add_face(body, -TOKEN_HEIGHT * 0.5 - 0.0008, 90.0, fmat)
+	_add_face(body, TOKEN_HEIGHT * 0.5 + 0.0008, -90.0, fmat, TOKEN_RADIUS)
+	_add_face(body, -TOKEN_HEIGHT * 0.5 - 0.0008, 90.0, fmat, TOKEN_RADIUS)
 
 	var col := CollisionShape3D.new()
 	var shape := CylinderShape3D.new()
