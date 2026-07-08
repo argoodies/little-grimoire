@@ -11,7 +11,7 @@ const TOKEN_HEIGHT := 0.07
 const TOKEN_TOP_Y := TOKEN_HEIGHT * 0.5
 const MAX_TILT_DEG := 22.0                 # 重力最大倾角
 const MOVE_SOUND_STEP := 0.07              # 拖动每滑过这么远响一次“哒”
-const ROT_SENS := 0.006                    # 拖拽旋转灵敏度（弧度/像素）
+const ROT_SENS := 0.0038                   # 拖拽旋转灵敏度（弧度/像素）
 
 # 三枚令牌：emoji、中文名、顶面色。
 const TOKENS := [
