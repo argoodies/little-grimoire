@@ -146,6 +146,36 @@ func _spawn_tokens() -> void:
 	for data in TOKENS:
 		_make_token(data, true)
 		_make_token(data, false)
+	_make_book_token()
+
+# 魔典：白底已抠成透明的书形模切令牌，平躺在毛毯上，可拖拽。
+func _make_book_token() -> void:
+	var body := StaticBody3D.new()
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = load("res://textures/token_book.png")
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	mat.alpha_scissor_threshold = 0.5
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.roughness = 0.9
+	var w := 0.62
+	var h := 0.45          # 贴图长宽比 422:306
+	var face := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2(w, h)
+	face.mesh = quad
+	face.material_override = mat
+	face.rotation_degrees = Vector3(-90.0, 0.0, 0.0)   # 躺平朝上
+	body.add_child(face)
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(w, 0.02, h)
+	col.shape = shape
+	body.add_child(col)
+	var base_y := TOP_SURF + 0.011
+	body.position = Vector3(0.0, base_y, 0.55)
+	body.set_meta("token", true)
+	body.set_meta("plane_y", base_y)
+	_table.add_child(body)
 
 func _make_token(data: Dictionary, is_top: bool) -> void:
 	var body := StaticBody3D.new()
