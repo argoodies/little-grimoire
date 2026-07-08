@@ -339,6 +339,8 @@ func _try_pick(screen_pos: Vector2) -> void:
 	var hit := space.intersect_ray(q)
 	if not hit.is_empty() and hit.collider.has_meta("token"):
 		_dragging = hit.collider
+		# 每次拽起随机歪斜 ±15°（绕自身垂直轴，像随手一放）。
+		_dragging.rotation = Vector3(0.0, randf_range(-deg_to_rad(15.0), deg_to_rad(15.0)), 0.0)
 		_sfx_pick.play()
 
 func _drag_to(screen_pos: Vector2) -> void:
