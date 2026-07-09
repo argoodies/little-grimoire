@@ -42,6 +42,7 @@ var _rotating := false                       # 正在拖动板面/空白旋转�
 var _font: FontFile
 var _sfx_pick: AudioStreamPlayer
 var _sfx_drop: AudioStreamPlayer
+var _sfx_click: AudioStreamPlayer
 
 var _dir: DirectionalLight3D                 # 主光/聚光/环境，用于日夜切换
 var _spot: SpotLight3D
@@ -70,34 +71,39 @@ func _build_toggle() -> void:
 	_toggle_btn.focus_mode = Control.FOCUS_NONE
 	_toggle_btn.anchor_left = 1.0
 	_toggle_btn.anchor_right = 1.0
-	_toggle_btn.offset_left = -104.0
+	_toggle_btn.offset_left = -148.0
 	_toggle_btn.offset_top = 44.0                 # 避开刘海安全区
-	_toggle_btn.offset_right = -28.0
-	_toggle_btn.offset_bottom = 120.0
+	_toggle_btn.offset_right = -24.0
+	_toggle_btn.offset_bottom = 168.0
 	_toggle_btn.add_theme_font_override("font", load("res://fonts/NotoEmoji-toggle.ttf"))
-	_toggle_btn.add_theme_font_size_override("font_size", 46)
+	_toggle_btn.add_theme_font_size_override("font_size", 74)
 	_toggle_btn.text = "☀️"
 	_toggle_btn.pressed.connect(_on_toggle)
 	layer.add_child(_toggle_btn)
 
 func _on_toggle() -> void:
 	_night = not _night
-	_apply_lighting()
+	_sfx_click.play()
+	_apply_lighting(true)
 
-# 应用日/夜光照。
-func _apply_lighting() -> void:
-	if _night:
-		_dir.light_color = Color(0.62, 0.74, 1.0)
-		_spot.light_color = Color(0.5, 0.68, 1.0)
-		_env.background_color = Color(0.02, 0.03, 0.09)
-		_env.ambient_light_color = Color(0.30, 0.40, 0.60)
-		_toggle_btn.text = "🌙"
+# 应用日/夜光照；animate=true 时 0.5s 渐变过渡。
+func _apply_lighting(animate: bool) -> void:
+	var dir_c := Color(0.62, 0.74, 1.0) if _night else Color(1.0, 0.94, 0.85)
+	var spot_c := Color(0.5, 0.68, 1.0) if _night else Color(1.0, 0.88, 0.66)
+	var bg_c := Color(0.02, 0.03, 0.09) if _night else Color(0.05, 0.03, 0.09)
+	var amb_c := Color(0.30, 0.40, 0.60) if _night else Color(0.42, 0.36, 0.52)
+	_toggle_btn.text = "🌙" if _night else "☀️"
+	if animate:
+		var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_SINE)
+		tw.tween_property(_dir, "light_color", dir_c, 0.5)
+		tw.tween_property(_spot, "light_color", spot_c, 0.5)
+		tw.tween_property(_env, "background_color", bg_c, 0.5)
+		tw.tween_property(_env, "ambient_light_color", amb_c, 0.5)
 	else:
-		_dir.light_color = Color(1.0, 0.94, 0.85)
-		_spot.light_color = Color(1.0, 0.88, 0.66)
-		_env.background_color = Color(0.05, 0.03, 0.09)
-		_env.ambient_light_color = Color(0.42, 0.36, 0.52)
-		_toggle_btn.text = "☀️"
+		_dir.light_color = dir_c
+		_spot.light_color = spot_c
+		_env.background_color = bg_c
+		_env.ambient_light_color = amb_c
 
 func _load_font() -> void:
 	# 中文小字用 Noto Sans SC 子集（已含令牌名与纽扣文案）。不再用 emoji。
@@ -144,6 +150,7 @@ func _add_face(parent: Node3D, y_off: float, rot_x: float, mat: StandardMaterial
 func _build_audio() -> void:
 	_sfx_pick = _make_player("res://sounds/pick.wav", 0.0)
 	_sfx_drop = _make_player("res://sounds/drop.wav", 2.0)
+	_sfx_click = _make_player("res://sounds/click.wav", 0.0)
 
 func _make_player(path: String, volume_db: float) -> AudioStreamPlayer:
 	var p := AudioStreamPlayer.new()
