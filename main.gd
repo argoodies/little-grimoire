@@ -93,10 +93,10 @@ func _build_toggle() -> void:
 	_toggle_btn.focus_mode = Control.FOCUS_NONE
 	_toggle_btn.anchor_left = 1.0
 	_toggle_btn.anchor_right = 1.0
-	_toggle_btn.offset_left = -148.0
-	_toggle_btn.offset_top = 44.0                 # 避开刘海安全区
-	_toggle_btn.offset_right = -24.0
-	_toggle_btn.offset_bottom = 168.0
+	_toggle_btn.offset_left = -164.0
+	_toggle_btn.offset_top = 80.0                 # 从角落往里挪，避开刘海安全区
+	_toggle_btn.offset_right = -40.0
+	_toggle_btn.offset_bottom = 204.0
 	_toggle_btn.add_theme_font_override("font", load("res://fonts/NotoEmoji-toggle.ttf"))
 	_toggle_btn.add_theme_font_size_override("font_size", 74)
 	_toggle_btn.text = "☀️"
