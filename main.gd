@@ -75,8 +75,9 @@ func _play_intro() -> void:
 	_intro = true
 	_manual_rot = Vector3.ZERO
 	_table.rotation = Vector3.ZERO
-	var tw := create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tw.tween_property(_table, "rotation:x", TAU * 4.0, 1.5)
+	# 开头极快、末尾长长地降速到停。
+	var tw := create_tween().set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_table, "rotation:x", TAU * 4.0, 1.9)
 	tw.tween_callback(_end_intro)
 
 func _end_intro() -> void:
@@ -195,7 +196,7 @@ func _build_camera() -> void:
 	_camera = Camera3D.new()
 	_camera.fov = 52.0
 	add_child(_camera)                        # 先入树，保证 look_at 用有效全局变换
-	_camera.position = Vector3(0.0, 3.4, 3.7)
+	_camera.position = Vector3(0.0, 4.6, 1.9)  # 约 3/4 俯视，基本正对绒布面
 	_camera.look_at(Vector3.ZERO, Vector3.UP)
 	_camera.current = true                    # 关键：脚本相机必须显式设为当前
 
