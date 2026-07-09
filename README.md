@@ -1,4 +1,4 @@
-# DeskFeel（Godot 版）
+# 小魔典 Little Grimoire（Godot 版）
 
 拟物数字桌板的 **Godot 4** 重制：真 3D 紫绒布桌板 + 可拖拽的圆柱厚片令牌。
 同一套 GDScript 代码同时出 **iOS** 与 **Web（GitHub Pages）**。

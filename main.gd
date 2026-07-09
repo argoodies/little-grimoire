@@ -1,5 +1,5 @@
 extends Node3D
-## DeskFeel — 真 3D 桌板（Godot 版）。
+## 小魔典 Little Grimoire — 真 3D 桌板（Godot 版）。
 ## 紫绒布板随手机重力倾斜、聚光灯打光、令牌可拖拽并有落桌声。
 ## 三枚令牌：🧩 解谜大师 / ✝️ 异端分子 / 👻 阎罗。
 ## iOS 与 Web（GitHub Pages）同一套代码。场景全部脚本生成。

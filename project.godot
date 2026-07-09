@@ -1,4 +1,4 @@
-; DeskFeel — 拟物数字桌板（Godot 版）
+; 小魔典 Little Grimoire — 拟物数字桌板（Godot 版）
 ; 引擎：Godot 4.6.3，语言 GDScript。
 ; 渲染：gl_compatibility（OpenGL/WebGL2）—— Web + iOS 都稳。
 
