@@ -54,7 +54,6 @@ var _sfx_click: AudioStreamPlayer
 var _dir: DirectionalLight3D                 # 主光/聚光/环境，用于日夜切换
 var _spot: SpotLight3D
 var _env: Environment
-var _bg_rect: TextureRect
 var _night := false
 var _toggle_btn: Button
 var _refresh_btn: Button
@@ -64,7 +63,6 @@ func _ready() -> void:
 	_load_font()
 	_build_audio()
 	_build_environment()
-	_build_background()
 	_build_camera()
 	_build_lights()
 	_table = Node3D.new()
@@ -155,19 +153,19 @@ func _on_toggle() -> void:
 func _apply_lighting(animate: bool) -> void:
 	var dir_c := Color(0.62, 0.74, 1.0) if _night else Color(1.0, 0.94, 0.85)
 	var spot_c := Color(0.5, 0.68, 1.0) if _night else Color(1.0, 0.88, 0.66)
-	var bg_m := Color(0.55, 0.64, 0.95) if _night else Color(1, 1, 1)   # 绒布背景冷蓝/正常
+	var bg_c := Color(0.02, 0.03, 0.09) if _night else Color(0.05, 0.03, 0.09)
 	var amb_c := Color(0.30, 0.40, 0.60) if _night else Color(0.42, 0.36, 0.52)
 	_toggle_btn.text = "🌙" if _night else "☀️"
 	if animate:
 		var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_SINE)
 		tw.tween_property(_dir, "light_color", dir_c, 0.5)
 		tw.tween_property(_spot, "light_color", spot_c, 0.5)
-		tw.tween_property(_bg_rect, "modulate", bg_m, 0.5)
+		tw.tween_property(_env, "background_color", bg_c, 0.5)
 		tw.tween_property(_env, "ambient_light_color", amb_c, 0.5)
 	else:
 		_dir.light_color = dir_c
 		_spot.light_color = spot_c
-		_bg_rect.modulate = bg_m
+		_env.background_color = bg_c
 		_env.ambient_light_color = amb_c
 
 func _load_font() -> void:
@@ -227,25 +225,13 @@ func _make_player(path: String, volume_db: float) -> AudioStreamPlayer:
 func _build_environment() -> void:
 	var we := WorldEnvironment.new()
 	_env = Environment.new()
-	_env.background_mode = Environment.BG_CANVAS      # 3D 背景用 2D 画布（紫绒纹理）
-	_env.background_canvas_max_layer = 0              # layer<=0 作背景，按钮在更高层
+	_env.background_mode = Environment.BG_COLOR
+	_env.background_color = Color(0.05, 0.03, 0.09)
 	_env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	_env.ambient_light_color = Color(0.42, 0.36, 0.52)
 	_env.ambient_light_energy = 0.45
 	we.environment = _env
 	add_child(we)
-
-# 全屏紫绒背景（铺在最底层，作为 3D 背景）。
-func _build_background() -> void:
-	var cl := CanvasLayer.new()
-	cl.layer = 0
-	add_child(cl)
-	_bg_rect = TextureRect.new()
-	_bg_rect.texture = load("res://textures/bg_velvet.png")
-	_bg_rect.set_anchors_preset(Control.PRESET_FULL_RECT)
-	_bg_rect.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
-	_bg_rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	cl.add_child(_bg_rect)
 
 func _build_camera() -> void:
 	_camera = Camera3D.new()
