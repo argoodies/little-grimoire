@@ -193,9 +193,9 @@ func _build_toggle() -> void:
 	help_btn.focus_mode = Control.FOCUS_NONE
 	help_btn.anchor_left = 1.0
 	help_btn.anchor_right = 1.0
-	help_btn.offset_left = -388.0                            # 刷新按钮左侧，间隔 60
+	help_btn.offset_left = -428.0                            # 刷新按钮左侧，间隔 100
 	help_btn.offset_top = 80.0
-	help_btn.offset_right = -244.0
+	help_btn.offset_right = -284.0
 	help_btn.offset_bottom = 224.0
 	help_btn.icon = load("res://textures/icon_help.png")    # 白色圆环内白色问号（透明底）
 	help_btn.expand_icon = true
