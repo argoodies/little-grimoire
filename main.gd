@@ -562,7 +562,8 @@ func _toggle_shroud(tk: Node3D) -> void:
 	sh.mesh = quad
 	sh.material_override = mat
 	sh.rotation_degrees = Vector3(-90.0, 0.0, 0.0)   # 躺平在令牌平面上
-	sh.position = Vector3(0.0, 0.012, 0.0)           # 略高于牌面
+	# 顶端对齐令牌顶缘(-Z 侧)：中心沿 -Z 偏移半个幡长。
+	sh.position = Vector3(0.0, 0.012, -longest * 0.5)
 	tk.add_child(sh)
 	tk.set_meta("shroud", sh)
 
