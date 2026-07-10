@@ -539,10 +539,9 @@ func _try_pick(screen_pos: Vector2) -> void:
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * 100.0)
 	var hit := space.intersect_ray(q)
 	if not hit.is_empty() and hit.collider.has_meta("token"):
-		_dragging = hit.collider               # 点到令牌 → 拖令牌
+		_dragging = hit.collider               # 点到令牌 → 可能拖或单击
 		_press_screen = screen_pos
 		_press_moved = false
-		_sfx_pick.play()
 	else:
 		_rotating = true                       # 点到木板或空白背景 → 旋转板子
 
@@ -576,8 +575,11 @@ func _toggle_shroud(tk: Node3D) -> void:
 	tk.set_meta("shroud", sh)
 
 func _drag_to(screen_pos: Vector2) -> void:
-	if screen_pos.distance_to(_press_screen) > 14.0:
-		_press_moved = true                    # 移动了 → 取消长按
+	if not _press_moved:
+		if screen_pos.distance_to(_press_screen) <= 14.0:
+			return                             # 阈值内：当作单击，不移动、不出声
+		_press_moved = true
+		_sfx_pick.play()                       # 真正开始拖拽才响“拿起”
 	var from := _camera.project_ray_origin(screen_pos)
 	var dir := _camera.project_ray_normal(screen_pos)
 	var py: float = _dragging.get_meta("plane_y")
