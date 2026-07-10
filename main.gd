@@ -220,6 +220,27 @@ func _build_diamond() -> void:
 	core.shadow_enabled = false
 	_world.add_child(core)
 
+	# 内部光源周围的可反射杂质：金属小颗粒，被内光照亮而闪烁，透过冲刷处可见。
+	var imat := StandardMaterial3D.new()
+	imat.albedo_color = Color(0.85, 0.9, 1.0)
+	imat.metallic = 1.0                        # 强反光
+	imat.roughness = 0.12
+	imat.emission_enabled = true
+	imat.emission = Color(0.4, 0.6, 1.0)
+	imat.emission_energy_multiplier = 0.4
+	for i in 14:
+		var spk := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		var s := randf_range(0.012, 0.03) * TARGET_W
+		bm.size = Vector3(s, s, s)
+		spk.mesh = bm
+		spk.material_override = imat
+		spk.rotation = Vector3(randf() * TAU, randf() * TAU, randf() * TAU)
+		# 分布在内光源附近的小球范围内（水晶内部）。
+		var dir := Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1)).normalized()
+		spk.position = dir * randf_range(0.0, TARGET_W * 0.18)
+		_world.add_child(spk)
+
 # 重置为初始覆尘态：清空冲刷，随机撒若干“无尘”小点（约 5% 面积无尘）。
 func _seed_dust() -> void:
 	for i in MAXW:
