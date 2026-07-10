@@ -275,7 +275,7 @@ render_mode blend_mix, cull_disabled, specular_schlick_ggx;
 
 uniform vec4 wash_points[80];
 uniform vec4 wash_normals[80];
-uniform vec3 powder_color : source_color = vec3(0.95, 0.96, 0.98);
+uniform vec3 powder_color : source_color = vec3(0.52, 0.52, 0.54);
 uniform vec3 diamond_color : source_color = vec3(0.12, 0.42, 0.92);
 
 varying vec3 v_local;
