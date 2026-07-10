@@ -1,4 +1,4 @@
-; 小魔典 Little Grimoire — 拟物数字桌板（Godot 版）
+; 解谜小宝石 Little Grimoire — 拟物数字桌板（Godot 版）
 ; 引擎：Godot 4.6.3，语言 GDScript。
 ; 渲染：gl_compatibility（OpenGL/WebGL2）—— Web + iOS 都稳。
 
@@ -6,7 +6,7 @@ config_version=5
 
 [application]
 
-config/name="小魔典"
+config/name="解谜小宝石"
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.6", "GL Compatibility")
 config/icon="res://icon.png"
