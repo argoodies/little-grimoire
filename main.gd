@@ -162,11 +162,11 @@ func _build_toggle() -> void:
 	_toggle_btn.anchor_right = 0.0
 	_toggle_btn.offset_left = 40.0
 	_toggle_btn.offset_top = 80.0                 # 从角落往里挪，避开刘海安全区
-	_toggle_btn.offset_right = 164.0
-	_toggle_btn.offset_bottom = 204.0
+	_toggle_btn.offset_right = 184.0
+	_toggle_btn.offset_bottom = 224.0
 	var emoji_font := load("res://fonts/NotoEmoji-toggle.ttf")
 	_toggle_btn.add_theme_font_override("font", emoji_font)
-	_toggle_btn.add_theme_font_size_override("font_size", 74)
+	_toggle_btn.add_theme_font_size_override("font_size", 84)
 	_toggle_btn.text = "☀️"
 	_toggle_btn.pressed.connect(_on_toggle)
 	layer.add_child(_toggle_btn)
@@ -177,11 +177,11 @@ func _build_toggle() -> void:
 	_refresh_btn.focus_mode = Control.FOCUS_NONE
 	_refresh_btn.anchor_left = 1.0
 	_refresh_btn.anchor_right = 1.0
-	_refresh_btn.offset_left = -164.0
+	_refresh_btn.offset_left = -184.0
 	_refresh_btn.offset_top = 80.0
 	_refresh_btn.offset_right = -40.0
-	_refresh_btn.offset_bottom = 204.0
-	_refresh_btn.pivot_offset = Vector2(62.0, 62.0)          # 绕中心旋转（124x124）
+	_refresh_btn.offset_bottom = 224.0
+	_refresh_btn.pivot_offset = Vector2(72.0, 72.0)          # 绕中心旋转（144x144）
 	_refresh_btn.icon = load("res://textures/icon_refresh.png")   # 白色线条刷新图标（透明底）
 	_refresh_btn.expand_icon = true
 	_refresh_btn.pressed.connect(_restart)
@@ -193,10 +193,10 @@ func _build_toggle() -> void:
 	help_btn.focus_mode = Control.FOCUS_NONE
 	help_btn.anchor_left = 1.0
 	help_btn.anchor_right = 1.0
-	help_btn.offset_left = -308.0                            # 紧挨刷新按钮左边（间隔 20）
+	help_btn.offset_left = -388.0                            # 刷新按钮左侧，间隔 60
 	help_btn.offset_top = 80.0
-	help_btn.offset_right = -184.0
-	help_btn.offset_bottom = 204.0
+	help_btn.offset_right = -244.0
+	help_btn.offset_bottom = 224.0
 	help_btn.icon = load("res://textures/icon_help.png")    # 白色圆环内白色问号（透明底）
 	help_btn.expand_icon = true
 	help_btn.pressed.connect(_show_rules)
@@ -204,7 +204,7 @@ func _build_toggle() -> void:
 
 # 重新开始：清掉现有令牌/纽扣，重新随机放置并重播开场翻转。
 func _restart() -> void:
-	_sfx_click.play()
+	_sfx_shroud.play()                        # 呼呼声（与问号按钮一致）
 	_dragging = null
 	_rotating = false
 	for p in _pieces:
