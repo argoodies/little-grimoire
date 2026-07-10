@@ -1,20 +1,21 @@
 extends Node3D
-## 小魔典 — 3D 拼图。9 片带微厚度的拼图片在空中轻轻晃动；
-## 点击一片让它沿随机轴翻转 180°。可缩放/旋转视角，保留日/夜灯光切换。
-## 拼图形状与贴图由 gen_puzzle.py 预生成（puzzle.json + textures/piece_N.png）。
-## iOS 与 Web（GitHub Pages）同一套代码，场景全部脚本生成。
+## 小魔典 — 宝石切割。初始是一整块蓝色宝石方料，按目标轮廓（一枚拼图片的形状）
+## 把多余的料一点点磨掉，最终切出拼图片形状的宝石。点击处会磨削材料并发出“嗡嗡”声。
+## 宝石用一层体素小方块表示：轮廓内=保留的宝石，轮廓外=可磨掉的多余料。
+## 可缩放/旋转视角，保留日/夜灯光切换。iOS 与 Web 同一套代码，场景全部脚本生成。
 
-const SCALE := 0.82                     # 拼图世界缩放（单元格 1.0 → 3D）
-const THICK := 0.05                     # 拼图厚度
-const ROT_SENS := 0.006                 # 拖拽旋转灵敏度（弧度/像素）
-const MIN_ZOOM := 2.4
-const MAX_ZOOM := 9.0
-const CREAM := Color(0.97, 0.955, 0.925)
-const BLUE := Color(0.11, 0.41, 0.75)
+const SCALE := 0.82                     # 世界缩放
+const CELL := 0.042                     # 体素格边长（世界单位）
+const THICK := 0.16                     # 宝石厚度
+const MARGIN := 0.13                    # 目标轮廓外多余料的宽度
+const BRUSH := 0.055                    # 磨削笔刷半径
+const ROT_SENS := 0.006
+const MIN_ZOOM := 2.2
+const MAX_ZOOM := 8.5
+const GEM := Color(0.10, 0.42, 0.86)
 
 var _camera: Camera3D
-var _world: Node3D                      # 所有拼图片的枢轴，拖拽旋转
-var _pieces: Array[Node3D] = []
+var _world: Node3D
 var _touches := {}
 var _pinching := false
 var _pinch_dist := 0.0
@@ -23,10 +24,18 @@ var _manual_rot := Vector3.ZERO
 var _rotating := false
 var _press_screen := Vector2.ZERO
 var _press_moved := false
-var _pressed_piece: Node3D = null
-var _t := 0.0
+var _carve_ok := false
+var _carve_pos := Vector2.ZERO
 
-var _sfx_flip: AudioStreamPlayer
+# 体素网格
+var _mm: MultiMesh
+var _nx := 0
+var _ny := 0
+var _origin := Vector2.ZERO              # 网格左下角（局部 XY）
+var _present: PackedByteArray            # 该格是否还有料
+var _keep: PackedByteArray               # 该格是否在目标轮廓内（保留，不可磨）
+
+var _sfx_buzz: AudioStreamPlayer
 var _dir: DirectionalLight3D
 var _spot: SpotLight3D
 var _env: Environment
@@ -41,16 +50,16 @@ func _ready() -> void:
 	_build_lights()
 	_world = Node3D.new()
 	add_child(_world)
-	_build_pieces()
+	_build_gem()
 	_build_toggle()
 
 # ---------- 基础环境 ----------
 
 func _build_audio() -> void:
-	_sfx_flip = AudioStreamPlayer.new()
-	_sfx_flip.stream = load("res://sounds/shroud.wav")   # 翻片的“呼”声
-	_sfx_flip.volume_db = 0.0
-	add_child(_sfx_flip)
+	_sfx_buzz = AudioStreamPlayer.new()
+	_sfx_buzz.stream = load("res://sounds/buzz.wav")     # 磨削“嗡嗡”声
+	_sfx_buzz.volume_db = 0.0
+	add_child(_sfx_buzz)
 
 func _build_environment() -> void:
 	var we := WorldEnvironment.new()
@@ -59,7 +68,7 @@ func _build_environment() -> void:
 	_env.background_color = Color(0.05, 0.03, 0.09)
 	_env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	_env.ambient_light_color = Color(0.42, 0.36, 0.52)
-	_env.ambient_light_energy = 0.5
+	_env.ambient_light_energy = 0.55
 	we.environment = _env
 	add_child(we)
 
@@ -67,7 +76,7 @@ func _build_camera() -> void:
 	_camera = Camera3D.new()
 	_camera.fov = 52.0
 	add_child(_camera)
-	_camera.position = Vector3(0.0, 0.5, 5.2)   # 基本正对拼图平面，略俯视
+	_camera.position = Vector3(0.0, 0.35, 4.0)
 	_camera.look_at(Vector3.ZERO, Vector3.UP)
 	_camera.current = true
 
@@ -76,18 +85,16 @@ func _build_lights() -> void:
 	_dir.rotation_degrees = Vector3(-34.0, -22.0, 0.0)
 	_dir.light_color = Color(1.0, 0.94, 0.85)
 	_dir.light_energy = 1.0
-	_dir.shadow_enabled = false
 	add_child(_dir)
 	_spot = SpotLight3D.new()
 	add_child(_spot)
-	_spot.position = Vector3(0.0, 1.4, 4.2)
+	_spot.position = Vector3(0.0, 1.4, 3.6)
 	_spot.look_at(Vector3.ZERO, Vector3.UP)
 	_spot.light_color = Color(1.0, 0.88, 0.66)
 	_spot.light_energy = 5.0
 	_spot.spot_range = 12.0
 	_spot.spot_angle = 46.0
 	_spot.spot_attenuation = 1.1
-	_spot.shadow_enabled = false
 
 # ---------- 日/夜切换按钮 ----------
 
@@ -97,8 +104,6 @@ func _build_toggle() -> void:
 	_toggle_btn = Button.new()
 	_toggle_btn.flat = true
 	_toggle_btn.focus_mode = Control.FOCUS_NONE
-	_toggle_btn.anchor_left = 0.0
-	_toggle_btn.anchor_right = 0.0
 	var emoji_font := load("res://fonts/NotoEmoji-toggle.ttf")
 	_toggle_btn.add_theme_font_override("font", emoji_font)
 	_toggle_btn.add_theme_font_size_override("font_size", 108)
@@ -108,7 +113,6 @@ func _build_toggle() -> void:
 	_apply_safe_area()
 	get_viewport().size_changed.connect(_apply_safe_area)
 
-# 把日/夜按钮放进系统安全区（刘海/灵动岛/圆角）内。
 func _apply_safe_area() -> void:
 	var btn := 144.0
 	var m := 40.0
@@ -148,142 +152,110 @@ func _apply_lighting(animate: bool) -> void:
 		_env.background_color = bg_c
 		_env.ambient_light_color = amb_c
 
-# ---------- 拼图片 ----------
+# ---------- 宝石体素板 ----------
 
-func _build_pieces() -> void:
+func _build_gem() -> void:
+	# 目标轮廓：复用生成好的中心拼图片（四边都有凹凸，形状完整）。
 	var f := FileAccess.open("res://puzzle.json", FileAccess.READ)
 	var data: Dictionary = JSON.parse_string(f.get_as_text())
-	for pc in data.pieces:
-		var verts: Array = pc.verts
-		var uvs: Array = pc.uvs
-		var body := StaticBody3D.new()
-		var mi := MeshInstance3D.new()
-		mi.mesh = _piece_mesh(verts, uvs, load(pc.tex))
-		body.add_child(mi)
-		# 碰撞盒（点击检测用），按包围盒近似。
-		var col := CollisionShape3D.new()
-		var box := BoxShape3D.new()
-		box.size = Vector3(float(pc.size[0]) * SCALE, float(pc.size[1]) * SCALE, THICK * 1.5)
-		col.shape = box
-		body.add_child(col)
-		# 位置：拼图平面 + 每片一点随机深度，制造“悬浮”层次。
-		var base_pos := Vector3(float(pc.pos[0]) * SCALE, float(pc.pos[1]) * SCALE, randf_range(-0.18, 0.18))
-		body.position = base_pos
-		body.set_meta("base_pos", base_pos)
-		body.set_meta("base_quat", Quaternion.IDENTITY)
-		body.set_meta("ph", Vector3(randf() * TAU, randf() * TAU, randf() * TAU))
-		body.set_meta("sp", Vector3(randf_range(0.5, 0.9), randf_range(0.4, 0.7), randf_range(0.5, 0.8)))
-		body.set_meta("token", true)
-		_world.add_child(body)
-		_pieces.append(body)
-
-# 由 2D 多边形轮廓生成带厚度的拼图网格：面 0=正反面（贴图），面 1=侧壁（蓝）。
-func _piece_mesh(verts: Array, uvs: Array, tex: Texture2D) -> ArrayMesh:
+	var raw: Array = data.pieces[4].verts
 	var poly := PackedVector2Array()
-	for v in verts:
+	for v in raw:
 		poly.append(Vector2(float(v[0]) * SCALE, float(v[1]) * SCALE))
-	var tri := Geometry2D.triangulate_polygon(poly)
-	var hz := THICK * 0.5
+	# 目标包围盒 + 四周多余料 = 初始方料范围。
+	var mn := poly[0]
+	var mx := poly[0]
+	for p in poly:
+		mn = Vector2(minf(mn.x, p.x), minf(mn.y, p.y))
+		mx = Vector2(maxf(mx.x, p.x), maxf(mx.y, p.y))
+	mn -= Vector2(MARGIN, MARGIN)
+	mx += Vector2(MARGIN, MARGIN)
+	var wsz := mx - mn
+	_nx = int(ceil(wsz.x / CELL))
+	_ny = int(ceil(wsz.y / CELL))
+	var center := (mn + mx) * 0.5
+	_origin = center - Vector2(_nx, _ny) * CELL * 0.5   # 居中对齐格子
 
-	# --- 面 0：正反面 ---
-	var st := SurfaceTool.new()
-	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var n := poly.size()
-	for k in range(0, tri.size(), 3):
-		var a: int = tri[k]
-		var b: int = tri[k + 1]
-		var c: int = tri[k + 2]
-		# 正面（+Z，朝相机）
-		for idx in [a, b, c]:
-			st.set_normal(Vector3(0, 0, 1))
-			st.set_uv(Vector2(uvs[idx][0], uvs[idx][1]))
-			st.add_vertex(Vector3(poly[idx].x, poly[idx].y, hz))
-		# 背面（-Z，反向缠绕）
-		for idx in [c, b, a]:
-			st.set_normal(Vector3(0, 0, -1))
-			st.set_uv(Vector2(uvs[idx][0], uvs[idx][1]))
-			st.add_vertex(Vector3(poly[idx].x, poly[idx].y, -hz))
-	var face_mat := StandardMaterial3D.new()
-	face_mat.albedo_texture = tex
-	face_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
-	face_mat.alpha_scissor_threshold = 0.4
-	face_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	face_mat.roughness = 0.9
-	face_mat.metallic = 0.0
-	face_mat.specular_mode = BaseMaterial3D.SPECULAR_DISABLED
-	st.set_material(face_mat)
-	var mesh: ArrayMesh = st.commit()
+	var total := _nx * _ny
+	_present = PackedByteArray()
+	_present.resize(total)
+	_keep = PackedByteArray()
+	_keep.resize(total)
 
-	# --- 面 1：侧壁 ---
-	var sw := SurfaceTool.new()
-	sw.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for i in n:
-		var pa := poly[i]
-		var pb := poly[(i + 1) % n]
-		var edge := (pb - pa)
-		if edge.length() < 0.0001:
-			continue
-		var dir := edge.normalized()
-		var nrm := Vector3(dir.y, -dir.x, 0.0)   # CCW 多边形外法线
-		var ta := Vector3(pa.x, pa.y, hz)
-		var tb := Vector3(pb.x, pb.y, hz)
-		var ba := Vector3(pa.x, pa.y, -hz)
-		var bb := Vector3(pb.x, pb.y, -hz)
-		for vtx in [ta, tb, bb, ta, bb, ba]:
-			sw.set_normal(nrm)
-			sw.set_uv(Vector2.ZERO)
-			sw.add_vertex(vtx)
-	var side_mat := StandardMaterial3D.new()
-	side_mat.albedo_color = BLUE
-	side_mat.roughness = 0.55
-	side_mat.metallic = 0.25
-	side_mat.cull_mode = BaseMaterial3D.CULL_DISABLED
-	sw.set_material(side_mat)
-	mesh = sw.commit(mesh)
-	return mesh
+	var box := BoxMesh.new()
+	box.size = Vector3(CELL, CELL, THICK)
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = GEM
+	mat.metallic = 0.35
+	mat.roughness = 0.12                     # 光亮宝石
+	mat.rim_enabled = true
+	mat.rim = 0.6
+	box.material = mat
 
-# 点击：让拼图沿随机轴翻转 180°。轴取在拼图片“当前自身坐标系”里（后乘），
-# 而不是锁死在初始法线所在的世界坐标系（前乘）——所以不论它已翻成什么朝向，
-# 下一次的随机轴都是相对它此刻的法线取的。
-func _flip(piece: Node3D) -> void:
-	_sfx_flip.play()
-	Input.vibrate_handheld(20)
-	# 球面均匀采样一个随机单位轴（避免立方体角落偏置）。
-	var z := randf_range(-1.0, 1.0)
-	var a := randf_range(0.0, TAU)
-	var rxy := sqrt(maxf(0.0, 1.0 - z * z))
-	var axis := Vector3(rxy * cos(a), rxy * sin(a), z)
-	var flip := Quaternion(axis, PI)
-	var from_q: Quaternion = piece.get_meta("base_quat")
-	var to_q := (from_q * flip).normalized()   # 后乘：轴在当前局部系
-	var tw := create_tween().set_trans(Tween.TRANS_SINE).set_ease(Tween.EASE_IN_OUT)
-	tw.tween_method(
-		func(w: float): piece.set_meta("base_quat", from_q.slerp(to_q, w)),
-		0.0, 1.0, 0.55)
+	_mm = MultiMesh.new()
+	_mm.transform_format = MultiMesh.TRANSFORM_3D
+	_mm.mesh = box
+	_mm.instance_count = total
 
-# ---------- 每帧：视角旋转 + 每片悬浮轻晃 ----------
+	for iy in _ny:
+		for ix in _nx:
+			var idx := iy * _nx + ix
+			var c := _cell_center(ix, iy)
+			var inside := Geometry2D.is_point_in_polygon(c, poly)
+			_keep[idx] = 1 if inside else 0
+			_present[idx] = 1
+			_mm.set_instance_transform(idx, Transform3D(Basis.IDENTITY, Vector3(c.x, c.y, 0.0)))
+
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = _mm
+	_world.add_child(mmi)
+
+	# 整块方料的碰撞盒：用于把点击射线映射到局部 XY（随视角旋转）。
+	var body := StaticBody3D.new()
+	var col := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = Vector3(_nx * CELL, _ny * CELL, THICK)
+	col.shape = shape
+	body.add_child(col)
+	body.position = Vector3(_origin.x + _nx * CELL * 0.5, _origin.y + _ny * CELL * 0.5, 0.0)
+	body.set_meta("gem", true)
+	_world.add_child(body)
+
+func _cell_center(ix: int, iy: int) -> Vector2:
+	return _origin + Vector2((ix + 0.5) * CELL, (iy + 0.5) * CELL)
+
+# 在局部 XY 处磨削：按笔刷半径去掉圈内的“多余料”格子（保留料不可磨）。
+func _carve(local: Vector2) -> void:
+	var removed := false
+	var rad_cells := int(ceil(BRUSH / CELL)) + 1
+	var cix := int((local.x - _origin.x) / CELL)
+	var ciy := int((local.y - _origin.y) / CELL)
+	for dy in range(-rad_cells, rad_cells + 1):
+		for dx in range(-rad_cells, rad_cells + 1):
+			var ix := cix + dx
+			var iy := ciy + dy
+			if ix < 0 or iy < 0 or ix >= _nx or iy >= _ny:
+				continue
+			var idx := iy * _nx + ix
+			if _present[idx] == 0 or _keep[idx] == 1:
+				continue                       # 已磨掉 / 是保留的宝石 → 跳过
+			if _cell_center(ix, iy).distance_to(local) > BRUSH:
+				continue
+			_present[idx] = 0
+			_mm.set_instance_transform(idx, Transform3D(Basis().scaled(Vector3.ZERO), Vector3(_cell_center(ix, iy).x, _cell_center(ix, iy).y, 0.0)))
+			removed = true
+	if removed:
+		_sfx_buzz.play()
+		Input.vibrate_handheld(15)
+
+# ---------- 每帧：视角旋转平滑 ----------
 
 func _process(delta: float) -> void:
-	_t += delta
 	var target := Vector3(_manual_rot.x, _manual_rot.y, 0.0)
 	var weight := 1.0 - pow(0.002, delta)
 	_world.rotation = _world.rotation.lerp(target, weight)
-	for p in _pieces:
-		var base_pos: Vector3 = p.get_meta("base_pos")
-		var base_q: Quaternion = p.get_meta("base_quat")
-		var ph: Vector3 = p.get_meta("ph")
-		var sp: Vector3 = p.get_meta("sp")
-		var bob := Vector3(
-			sin(_t * sp.x + ph.x) * 0.03,
-			sin(_t * sp.y + ph.y) * 0.05,
-			sin(_t * sp.z + ph.z) * 0.03)
-		var sway := Basis.from_euler(Vector3(
-			sin(_t * sp.y + ph.y) * 0.12,
-			sin(_t * sp.z + ph.z) * 0.10,
-			sin(_t * sp.x + ph.z) * 0.12))
-		p.transform = Transform3D(Basis(base_q) * sway, base_pos + bob)
 
-# ---------- 输入：缩放 / 旋转视角 / 点击翻片 ----------
+# ---------- 输入：缩放 / 旋转视角 / 点击磨削 ----------
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
@@ -293,7 +265,7 @@ func _unhandled_input(event: InputEvent) -> void:
 			_touches.erase(event.index)
 		if _touches.size() >= 2:
 			_pinching = true
-			_pressed_piece = null
+			_carve_ok = false
 			_rotating = false
 			_pinch_dist = _two_touch_dist()
 			return
@@ -324,14 +296,16 @@ func _unhandled_input(event: InputEvent) -> void:
 
 	if event is InputEventMouseButton or event is InputEventScreenTouch:
 		if event.pressed:
-			_pressed_piece = _pick(event.position)   # 命中的拼图（可能为 null）
+			var lp := _pick_local(event.position)
+			_carve_ok = lp.z > 0.5           # z 分量作为命中标志
+			_carve_pos = Vector2(lp.x, lp.y)
 			_press_screen = event.position
 			_press_moved = false
-			_rotating = true                         # 任意拖拽都旋转视角
+			_rotating = true
 		else:
-			if not _press_moved and _pressed_piece != null:
-				_flip(_pressed_piece)                # 干净单击拼图 → 翻转
-			_pressed_piece = null
+			if not _press_moved and _carve_ok:
+				_carve(_carve_pos)
+			_carve_ok = false
 			_rotating = false
 	elif event is InputEventMouseMotion or event is InputEventScreenDrag:
 		if _rotating:
@@ -339,15 +313,17 @@ func _unhandled_input(event: InputEvent) -> void:
 				_press_moved = true
 			_rotate_by(event.relative)
 
-func _pick(screen_pos: Vector2) -> Node3D:
+# 返回 (localX, localY, hit)：z=1 命中宝石、z=0 未命中。
+func _pick_local(screen_pos: Vector2) -> Vector3:
 	var from := _camera.project_ray_origin(screen_pos)
 	var dir := _camera.project_ray_normal(screen_pos)
 	var space := get_world_3d().direct_space_state
 	var q := PhysicsRayQueryParameters3D.create(from, from + dir * 100.0)
 	var hit := space.intersect_ray(q)
-	if not hit.is_empty() and hit.collider.has_meta("token"):
-		return hit.collider
-	return null
+	if not hit.is_empty() and hit.collider.has_meta("gem"):
+		var lp: Vector3 = _world.to_local(hit.position)
+		return Vector3(lp.x, lp.y, 1.0)
+	return Vector3(0, 0, 0)
 
 func _rotate_by(delta: Vector2) -> void:
 	_manual_rot.x -= delta.y * ROT_SENS
