@@ -329,7 +329,10 @@ func _spray(screen_pos: Vector2) -> void:
 		return
 	var inv := _mesh.global_transform.affine_inverse()
 	var local: Vector3 = inv * (hit.position as Vector3)
-	var lnorm: Vector3 = (inv.basis * (hit.normal as Vector3)).normalized()   # 命中面局部法线
+	var wnorm: Vector3 = hit.normal
+	if wnorm.dot(wd) > 0.0:                       # 保证法线朝相机（可见的那一面），避免露到背面
+		wnorm = -wnorm
+	var lnorm: Vector3 = (inv.basis * wnorm).normalized()   # 命中面局部法线
 	# 找最近的、同一面（法线相近）的已存在冲刷点：够近则扩大，否则新增。
 	var best := -1
 	var bestd := INF
