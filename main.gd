@@ -69,6 +69,16 @@ func _build_environment() -> void:
 	_env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	_env.ambient_light_color = Color(0.42, 0.36, 0.52)
 	_env.ambient_light_energy = 0.55
+	# 泛光/炫光：亮部（宝石高光 + 内发光）超过阈值后晕开成光晕。
+	_env.glow_enabled = true
+	_env.glow_intensity = 1.2
+	_env.glow_strength = 1.1
+	_env.glow_bloom = 0.3
+	_env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
+	_env.glow_hdr_threshold = 0.8
+	_env.set_glow_level(3, 1.0)
+	_env.set_glow_level(4, 1.0)
+	_env.set_glow_level(5, 0.6)
 	we.environment = _env
 	add_child(we)
 
@@ -90,8 +100,8 @@ func _build_lights() -> void:
 	add_child(_spot)
 	_spot.position = Vector3(0.0, 1.4, 3.6)
 	_spot.look_at(Vector3.ZERO, Vector3.UP)
-	_spot.light_color = Color(1.0, 0.88, 0.66)
-	_spot.light_energy = 5.0
+	_spot.light_color = Color(1.0, 0.9, 0.72)
+	_spot.light_energy = 7.5                  # 更亮的高光热点 → 泛光更明显
 	_spot.spot_range = 12.0
 	_spot.spot_angle = 46.0
 	_spot.spot_attenuation = 1.1
@@ -196,9 +206,9 @@ func _build_gem() -> void:
 	mat.rim_tint = 0.3
 	mat.refraction_enabled = true                           # 折射（Compatibility 支持时生效，折射背景光）
 	mat.refraction_scale = 0.07
-	mat.emission_enabled = true                             # 内部微辉，透出“光芒”
-	mat.emission = Color(0.06, 0.20, 0.45)
-	mat.emission_energy_multiplier = 0.4
+	mat.emission_enabled = true                             # 内部辉光，透出“光芒”
+	mat.emission = Color(0.10, 0.32, 0.70)
+	mat.emission_energy_multiplier = 0.9
 	box.material = mat
 
 	_mm = MultiMesh.new()
