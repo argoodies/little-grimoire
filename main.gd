@@ -630,9 +630,11 @@ func _toggle_shroud(tk: Node3D) -> void:
 	quad.size = Vector2(longest * 95.0 / 135.0, longest)   # 贴图长宽比 95:135
 	sh.mesh = quad
 	sh.material_override = mat
-	sh.rotation_degrees = Vector3(-90.0, 0.0, 0.0)   # 躺平在令牌平面上
-	# 顶端对齐令牌顶缘(-Z 侧)：中心沿 -Z 偏移半个幡长。
-	sh.position = Vector3(0.0, 0.012, -longest * 0.5)
+	# 令牌正反两面镜像：背面令牌可见面是 -Y，幡要盖在 -Y 侧且朝外（同 _add_label 的处理）。
+	var s := 1.0 if float(tk.get_meta("plane_y")) > 0.0 else -1.0
+	sh.rotation_degrees = Vector3(-90.0 * s, 0.0, 0.0)   # 躺平在令牌可见面上
+	# 顶端对齐令牌顶缘：中心沿顶缘方向偏移半个幡长（背面 Z 取反）。
+	sh.position = Vector3(0.0, 0.012 * s, -longest * 0.5 * s)
 	tk.add_child(sh)
 	tk.set_meta("shroud", sh)
 
