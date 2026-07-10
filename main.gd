@@ -194,21 +194,19 @@ func _build_gem() -> void:
 
 	var box := BoxMesh.new()
 	box.size = Vector3(CELL, CELL, THICK)
+	# 纯透明钻石：近无色、高透明、强折射高光。
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(GEM.r, GEM.g, GEM.b, 0.5)       # 半透明蓝宝石
+	mat.albedo_color = Color(0.90, 0.95, 1.0, 0.16)         # 近无色、高透明
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS   # 写深度：上千半透体素不糊成一团
-	mat.metallic = 0.25
-	mat.roughness = 0.06                                     # 高光亮，宝石光泽
-	mat.metallic_specular = 0.9
+	mat.metallic = 0.0
+	mat.roughness = 0.02                                     # 极光亮，钻石高光
+	mat.metallic_specular = 1.0
 	mat.rim_enabled = true
-	mat.rim = 0.75                                           # 边缘辉光
-	mat.rim_tint = 0.3
-	mat.refraction_enabled = true                           # 折射（Compatibility 支持时生效，折射背景光）
-	mat.refraction_scale = 0.07
-	mat.emission_enabled = true                             # 内部辉光，透出“光芒”
-	mat.emission = Color(0.10, 0.32, 0.70)
-	mat.emission_energy_multiplier = 0.9
+	mat.rim = 0.6                                            # 边缘炫光
+	mat.rim_tint = 0.1
+	mat.refraction_enabled = true                           # 折射背景光
+	mat.refraction_scale = 0.09
 	box.material = mat
 
 	_mm = MultiMesh.new()
@@ -216,6 +214,7 @@ func _build_gem() -> void:
 	_mm.mesh = box
 	_mm.instance_count = total
 
+	var keep_cells: Array[Vector2] = []
 	for iy in _ny:
 		for ix in _nx:
 			var idx := iy * _nx + ix
@@ -223,11 +222,15 @@ func _build_gem() -> void:
 			var inside := Geometry2D.is_point_in_polygon(c, poly)
 			_keep[idx] = 1 if inside else 0
 			_present[idx] = 1
+			if inside:
+				keep_cells.append(c)
 			_mm.set_instance_transform(idx, Transform3D(Basis.IDENTITY, Vector3(c.x, c.y, 0.0)))
 
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = _mm
 	_world.add_child(mmi)
+
+	_spawn_impurities(keep_cells)
 
 	# 整块方料的碰撞盒：用于把点击射线映射到局部 XY（随视角旋转）。
 	var body := StaticBody3D.new()
@@ -242,6 +245,31 @@ func _build_gem() -> void:
 
 func _cell_center(ix: int, iy: int) -> Vector2:
 	return _origin + Vector2((ix + 0.5) * CELL, (iy + 0.5) * CELL)
+
+# 在钻石内部（保留区）随机嵌入几颗蓝色杂质，透过透明钻石可见。
+func _spawn_impurities(keep_cells: Array[Vector2]) -> void:
+	if keep_cells.is_empty():
+		return
+	keep_cells.shuffle()
+	var count := clampi(int(keep_cells.size() * 0.012), 6, 14)
+	var imat := StandardMaterial3D.new()
+	imat.albedo_color = Color(0.10, 0.42, 0.86)
+	imat.metallic = 0.0
+	imat.roughness = 0.35
+	imat.emission_enabled = true                # 微微发蓝，透过钻石透出
+	imat.emission = Color(0.10, 0.35, 0.75)
+	imat.emission_energy_multiplier = 0.7
+	for i in count:
+		var c: Vector2 = keep_cells[i]
+		var spk := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		var s := randf_range(0.35, 0.75) * CELL   # 大小不一的杂质点
+		bm.size = Vector3(s, s, s)
+		spk.mesh = bm
+		spk.material_override = imat
+		spk.rotation = Vector3(randf() * TAU, randf() * TAU, randf() * TAU)
+		spk.position = Vector3(c.x, c.y, randf_range(-THICK * 0.3, THICK * 0.3))  # 嵌在钻石厚度内
+		_world.add_child(spk)
 
 # 在局部 XY 处磨削：按笔刷半径去掉圈内的“多余料”格子（保留料不可磨）。
 func _carve(local: Vector2) -> void:
