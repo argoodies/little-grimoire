@@ -1,39 +1,35 @@
 extends Node3D
-## 小魔典 — 宝石切割。初始是一整块蓝色宝石方料，按目标轮廓（一枚拼图片的形状）
-## 把多余的料一点点磨掉，最终切出拼图片形状的宝石。点击处会磨削材料并发出“嗡嗡”声。
-## 宝石用一层体素小方块表示：轮廓内=保留的宝石，轮廓外=可磨掉的多余料。
-## 可缩放/旋转视角，保留日/夜灯光切换。iOS 与 Web 同一套代码，场景全部脚本生成。
+## 小魔典 — 水晶原石粉碎。原石是一块蓝水晶（由 GLB 体素化而来，crystal.json）。
+## 触击并保持长按 → 持续粉碎接触处；按住拖动可挪动接触点，沿途一直粉碎。发出磨削“嗡嗡”声。
+## 单指=粉碎；双指=缩放+旋转视角。保留日/夜灯光切换。iOS 与 Web 同一套代码。
 
-const SCALE := 0.82                     # 世界缩放
-const CELL := 0.042                     # 体素格边长（世界单位）
-const THICK := 0.16                     # 宝石厚度
-const MARGIN := 0.13                    # 目标轮廓外多余料的宽度
-const BRUSH := 0.055                    # 磨削笔刷半径
+const TARGET_W := 1.7                    # 水晶最长边的世界尺寸
 const ROT_SENS := 0.006
-const MIN_ZOOM := 2.2
-const MAX_ZOOM := 8.5
-const GEM := Color(0.10, 0.42, 0.86)
+const MIN_ZOOM := 2.0
+const MAX_ZOOM := 8.0
+const BR_WORLD := 0.06                   # 粉碎笔刷半径（世界单位）
+const CRYSTAL := Color(0.16, 0.46, 0.92)
 
 var _camera: Camera3D
 var _world: Node3D
 var _touches := {}
-var _pinching := false
 var _pinch_dist := 0.0
+var _pinch_mid := Vector2.ZERO
 
 var _manual_rot := Vector3.ZERO
-var _rotating := false
-var _press_screen := Vector2.ZERO
-var _press_moved := false
-var _carve_ok := false
-var _carve_pos := Vector2.ZERO
+var _rotating := false                    # 鼠标右键旋转
+var _crushing := false
+var _crush_screen := Vector2.ZERO
 
-# 体素网格
-var _mm: MultiMesh
+# 体素网格（模型索引：ix∈nx, iy∈ny=厚度, iz∈nz）
 var _nx := 0
 var _ny := 0
-var _origin := Vector2.ZERO              # 网格左下角（局部 XY）
-var _present: PackedByteArray            # 该格是否还有料
-var _keep: PackedByteArray               # 该格是否在目标轮廓内（保留，不可磨）
+var _nz := 0
+var _cell := 0.04
+var _occ: PackedByteArray                 # 该体素是否还在
+var _inst: PackedInt32Array               # 体素 → MultiMesh 实例号（-1=无）
+var _mm: MultiMesh
+var _brv := 2                             # 笔刷半径（体素）
 
 var _sfx_buzz: AudioStreamPlayer
 var _dir: DirectionalLight3D
@@ -50,16 +46,16 @@ func _ready() -> void:
 	_build_lights()
 	_world = Node3D.new()
 	add_child(_world)
-	_build_gem()
+	_build_crystal()
 	_build_toggle()
 
 # ---------- 基础环境 ----------
 
 func _build_audio() -> void:
 	_sfx_buzz = AudioStreamPlayer.new()
-	_sfx_buzz.stream = load("res://sounds/buzz.wav")     # 磨削“嗡嗡”声
+	_sfx_buzz.stream = load("res://sounds/buzz.wav")
 	_sfx_buzz.volume_db = 0.0
-	add_child(_sfx_buzz)
+	add_child(_sfx_buzz)                            # 长按时在 _process 里循环续播成持续磨削声
 
 func _build_environment() -> void:
 	var we := WorldEnvironment.new()
@@ -69,13 +65,12 @@ func _build_environment() -> void:
 	_env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	_env.ambient_light_color = Color(0.42, 0.36, 0.52)
 	_env.ambient_light_energy = 0.55
-	# 泛光/炫光：亮部（宝石高光 + 内发光）超过阈值后晕开成光晕。
 	_env.glow_enabled = true
-	_env.glow_intensity = 1.2
+	_env.glow_intensity = 1.1
 	_env.glow_strength = 1.1
 	_env.glow_bloom = 0.3
 	_env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
-	_env.glow_hdr_threshold = 0.8
+	_env.glow_hdr_threshold = 0.85
 	_env.set_glow_level(3, 1.0)
 	_env.set_glow_level(4, 1.0)
 	_env.set_glow_level(5, 0.6)
@@ -86,7 +81,7 @@ func _build_camera() -> void:
 	_camera = Camera3D.new()
 	_camera.fov = 52.0
 	add_child(_camera)
-	_camera.position = Vector3(0.0, 0.35, 4.0)
+	_camera.position = Vector3(0.0, 0.25, 3.6)
 	_camera.look_at(Vector3.ZERO, Vector3.UP)
 	_camera.current = true
 
@@ -98,10 +93,10 @@ func _build_lights() -> void:
 	add_child(_dir)
 	_spot = SpotLight3D.new()
 	add_child(_spot)
-	_spot.position = Vector3(0.0, 1.4, 3.6)
+	_spot.position = Vector3(0.0, 1.3, 3.2)
 	_spot.look_at(Vector3.ZERO, Vector3.UP)
 	_spot.light_color = Color(1.0, 0.9, 0.72)
-	_spot.light_energy = 7.5                  # 更亮的高光热点 → 泛光更明显
+	_spot.light_energy = 7.0
 	_spot.spot_range = 12.0
 	_spot.spot_angle = 46.0
 	_spot.spot_attenuation = 1.1
@@ -146,7 +141,7 @@ func _on_toggle() -> void:
 
 func _apply_lighting(animate: bool) -> void:
 	var dir_c := Color(0.62, 0.74, 1.0) if _night else Color(1.0, 0.94, 0.85)
-	var spot_c := Color(0.5, 0.68, 1.0) if _night else Color(1.0, 0.88, 0.66)
+	var spot_c := Color(0.5, 0.68, 1.0) if _night else Color(1.0, 0.9, 0.72)
 	var bg_c := Color(0.02, 0.03, 0.09) if _night else Color(0.05, 0.03, 0.09)
 	var amb_c := Color(0.30, 0.40, 0.60) if _night else Color(0.42, 0.36, 0.52)
 	_toggle_btn.text = "🌙" if _night else "☀️"
@@ -162,215 +157,214 @@ func _apply_lighting(animate: bool) -> void:
 		_env.background_color = bg_c
 		_env.ambient_light_color = amb_c
 
-# ---------- 宝石体素板 ----------
+# ---------- 水晶原石（3D 体素） ----------
 
-func _build_gem() -> void:
-	# 目标轮廓：复用生成好的中心拼图片（四边都有凹凸，形状完整）。
-	var f := FileAccess.open("res://puzzle.json", FileAccess.READ)
+func _build_crystal() -> void:
+	var f := FileAccess.open("res://crystal.json", FileAccess.READ)
 	var data: Dictionary = JSON.parse_string(f.get_as_text())
-	var raw: Array = data.pieces[4].verts
-	var poly := PackedVector2Array()
-	for v in raw:
-		poly.append(Vector2(float(v[0]) * SCALE, float(v[1]) * SCALE))
-	# 目标包围盒 + 四周多余料 = 初始方料范围。
-	var mn := poly[0]
-	var mx := poly[0]
-	for p in poly:
-		mn = Vector2(minf(mn.x, p.x), minf(mn.y, p.y))
-		mx = Vector2(maxf(mx.x, p.x), maxf(mx.y, p.y))
-	mn -= Vector2(MARGIN, MARGIN)
-	mx += Vector2(MARGIN, MARGIN)
-	var wsz := mx - mn
-	_nx = int(ceil(wsz.x / CELL))
-	_ny = int(ceil(wsz.y / CELL))
-	var center := (mn + mx) * 0.5
-	_origin = center - Vector2(_nx, _ny) * CELL * 0.5   # 居中对齐格子
+	_nx = int(data.nx)
+	_ny = int(data.ny)
+	_nz = int(data.nz)
+	_cell = TARGET_W / float(max(_nx, _nz))
+	_brv = int(ceil(BR_WORLD / _cell))
 
-	var total := _nx * _ny
-	_present = PackedByteArray()
-	_present.resize(total)
-	_keep = PackedByteArray()
-	_keep.resize(total)
+	var total := _nx * _ny * _nz
+	_occ = PackedByteArray()
+	_occ.resize(total)
+	_inst = PackedInt32Array()
+	_inst.resize(total)
+	for i in total:
+		_inst[i] = -1
+	var voxels: Array = data.voxels
 
 	var box := BoxMesh.new()
-	box.size = Vector3(CELL, CELL, THICK)
-	# 纯透明钻石：近无色、高透明、强折射高光。
+	box.size = Vector3(_cell, _cell, _cell)
 	var mat := StandardMaterial3D.new()
-	mat.albedo_color = Color(0.90, 0.95, 1.0, 0.16)         # 近无色、高透明
+	mat.albedo_color = Color(CRYSTAL.r, CRYSTAL.g, CRYSTAL.b, 0.72)   # 半透蓝水晶
 	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS   # 写深度：上千半透体素不糊成一团
-	mat.metallic = 0.0
-	mat.roughness = 0.02                                     # 极光亮，钻石高光
-	mat.metallic_specular = 1.0
+	mat.depth_draw_mode = BaseMaterial3D.DEPTH_DRAW_ALWAYS
+	mat.metallic = 0.1
+	mat.roughness = 0.08
+	mat.metallic_specular = 0.95
 	mat.rim_enabled = true
-	mat.rim = 0.6                                            # 边缘炫光
-	mat.rim_tint = 0.1
-	mat.refraction_enabled = true                           # 折射背景光
-	mat.refraction_scale = 0.09
+	mat.rim = 0.6
+	mat.refraction_enabled = true
+	mat.refraction_scale = 0.08
+	mat.emission_enabled = true
+	mat.emission = Color(0.08, 0.26, 0.6)
+	mat.emission_energy_multiplier = 0.5
 	box.material = mat
 
 	_mm = MultiMesh.new()
 	_mm.transform_format = MultiMesh.TRANSFORM_3D
 	_mm.mesh = box
-	_mm.instance_count = total
+	_mm.instance_count = voxels.size()
 
-	var keep_cells: Array[Vector2] = []
-	for iy in _ny:
-		for ix in _nx:
-			var idx := iy * _nx + ix
-			var c := _cell_center(ix, iy)
-			var inside := Geometry2D.is_point_in_polygon(c, poly)
-			_keep[idx] = 1 if inside else 0
-			_present[idx] = 1
-			if inside:
-				keep_cells.append(c)
-			_mm.set_instance_transform(idx, Transform3D(Basis.IDENTITY, Vector3(c.x, c.y, 0.0)))
+	for n in voxels.size():
+		var flat := int(voxels[n])
+		_occ[flat] = 1
+		_inst[flat] = n
+		_mm.set_instance_transform(n, Transform3D(Basis.IDENTITY, _vox_world(flat)))
 
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = _mm
 	_world.add_child(mmi)
 
-	_spawn_impurities(keep_cells)
+# 模型体素 flat → 世界坐标（把模型薄轴 Y 映射为世界 Z 深度，大面朝相机）。
+func _vox_world(flat: int) -> Vector3:
+	var ix := flat % _nx
+	var iy := (flat / _nx) % _ny
+	var iz := flat / (_nx * _ny)
+	return Vector3(
+		(ix - _nx * 0.5 + 0.5) * _cell,
+		(iz - _nz * 0.5 + 0.5) * _cell,
+		(iy - _ny * 0.5 + 0.5) * _cell)
 
-	# 整块方料的碰撞盒：用于把点击射线映射到局部 XY（随视角旋转）。
-	var body := StaticBody3D.new()
-	var col := CollisionShape3D.new()
-	var shape := BoxShape3D.new()
-	shape.size = Vector3(_nx * CELL, _ny * CELL, THICK)
-	col.shape = shape
-	body.add_child(col)
-	body.position = Vector3(_origin.x + _nx * CELL * 0.5, _origin.y + _ny * CELL * 0.5, 0.0)
-	body.set_meta("gem", true)
-	_world.add_child(body)
+func _flat(ix: int, iy: int, iz: int) -> int:
+	return iz * (_nx * _ny) + iy * _nx + ix
 
-func _cell_center(ix: int, iy: int) -> Vector2:
-	return _origin + Vector2((ix + 0.5) * CELL, (iy + 0.5) * CELL)
+# ---------- 粉碎 ----------
 
-# 在钻石内部（保留区）随机嵌入几颗蓝色杂质，透过透明钻石可见。
-func _spawn_impurities(keep_cells: Array[Vector2]) -> void:
-	if keep_cells.is_empty():
+# 沿相机射线找到接触到的第一个体素，然后按 3D 笔刷粉碎周围。
+func _crush(screen_pos: Vector2) -> void:
+	var wo := _camera.project_ray_origin(screen_pos)
+	var wd := _camera.project_ray_normal(screen_pos)
+	var lo := _world.to_local(wo)
+	var ld := (_world.to_local(wo + wd) - lo).normalized()
+	# 与网格 AABB 求交
+	var hx := _nx * _cell * 0.5
+	var hy := _nz * _cell * 0.5
+	var hz := _ny * _cell * 0.5
+	var t := _aabb_enter(lo, ld, Vector3(hx, hy, hz))
+	if t.x > t.y:
 		return
-	keep_cells.shuffle()
-	var count := clampi(int(keep_cells.size() * 0.012), 6, 14)
-	var imat := StandardMaterial3D.new()
-	imat.albedo_color = Color(0.10, 0.42, 0.86)
-	imat.metallic = 0.0
-	imat.roughness = 0.35
-	imat.emission_enabled = true                # 微微发蓝，透过钻石透出
-	imat.emission = Color(0.10, 0.35, 0.75)
-	imat.emission_energy_multiplier = 0.7
-	for i in count:
-		var c: Vector2 = keep_cells[i]
-		var spk := MeshInstance3D.new()
-		var bm := BoxMesh.new()
-		var s := randf_range(0.35, 0.75) * CELL   # 大小不一的杂质点
-		bm.size = Vector3(s, s, s)
-		spk.mesh = bm
-		spk.material_override = imat
-		spk.rotation = Vector3(randf() * TAU, randf() * TAU, randf() * TAU)
-		spk.position = Vector3(c.x, c.y, randf_range(-THICK * 0.3, THICK * 0.3))  # 嵌在钻石厚度内
-		_world.add_child(spk)
+	var tt: float = maxf(t.x, 0.0)
+	var step := _cell * 0.5
+	while tt <= t.y:
+		var p := lo + ld * tt
+		var ix := int(floor(p.x / _cell + _nx * 0.5))
+		var iy := int(floor(p.z / _cell + _ny * 0.5))     # 世界 Z ↔ 模型 Y
+		var iz := int(floor(p.y / _cell + _nz * 0.5))     # 世界 Y ↔ 模型 Z
+		if ix >= 0 and ix < _nx and iy >= 0 and iy < _ny and iz >= 0 and iz < _nz:
+			if _occ[_flat(ix, iy, iz)] == 1:
+				_crush_brush(ix, iy, iz)
+				return
+		tt += step
 
-# 在局部 XY 处磨削：按笔刷半径去掉圈内的“多余料”格子（保留料不可磨）。
-func _carve(local: Vector2) -> void:
+func _crush_brush(cx: int, cy: int, cz: int) -> void:
 	var removed := false
-	var rad_cells := int(ceil(BRUSH / CELL)) + 1
-	var cix := int((local.x - _origin.x) / CELL)
-	var ciy := int((local.y - _origin.y) / CELL)
-	for dy in range(-rad_cells, rad_cells + 1):
-		for dx in range(-rad_cells, rad_cells + 1):
-			var ix := cix + dx
-			var iy := ciy + dy
-			if ix < 0 or iy < 0 or ix >= _nx or iy >= _ny:
-				continue
-			var idx := iy * _nx + ix
-			if _present[idx] == 0 or _keep[idx] == 1:
-				continue                       # 已磨掉 / 是保留的宝石 → 跳过
-			if _cell_center(ix, iy).distance_to(local) > BRUSH:
-				continue
-			_present[idx] = 0
-			_mm.set_instance_transform(idx, Transform3D(Basis().scaled(Vector3.ZERO), Vector3(_cell_center(ix, iy).x, _cell_center(ix, iy).y, 0.0)))
-			removed = true
+	var r := _brv
+	for dz in range(-r, r + 1):
+		for dy in range(-r, r + 1):
+			for dx in range(-r, r + 1):
+				if dx * dx + dy * dy + dz * dz > r * r:
+					continue
+				var ix := cx + dx
+				var iy := cy + dy
+				var iz := cz + dz
+				if ix < 0 or ix >= _nx or iy < 0 or iy >= _ny or iz < 0 or iz >= _nz:
+					continue
+				var fl := _flat(ix, iy, iz)
+				if _occ[fl] == 0:
+					continue
+				_occ[fl] = 0
+				var inst := _inst[fl]
+				if inst >= 0:
+					_mm.set_instance_transform(inst, Transform3D(Basis().scaled(Vector3.ZERO), _vox_world(fl)))
+				removed = true
 	if removed:
-		_sfx_buzz.play()
-		Input.vibrate_handheld(15)
+		Input.vibrate_handheld(12)
 
-# ---------- 每帧：视角旋转平滑 ----------
+# 射线与中心在原点、半尺寸 h 的 AABB 求交，返回 (t_enter, t_exit)。
+func _aabb_enter(o: Vector3, d: Vector3, h: Vector3) -> Vector2:
+	var t0 := -INF
+	var t1 := INF
+	for i in 3:
+		var oi := o[i]
+		var di := d[i]
+		var lo := -h[i]
+		var hi := h[i]
+		if absf(di) < 1e-9:
+			if oi < lo or oi > hi:
+				return Vector2(1.0, -1.0)
+		else:
+			var ta := (lo - oi) / di
+			var tb := (hi - oi) / di
+			if ta > tb:
+				var tmp := ta; ta = tb; tb = tmp
+			t0 = maxf(t0, ta)
+			t1 = minf(t1, tb)
+	return Vector2(t0, t1)
+
+# ---------- 每帧：持续粉碎 + 视角平滑 ----------
 
 func _process(delta: float) -> void:
+	if _crushing:
+		_crush(_crush_screen)
+		if not _sfx_buzz.playing:
+			_sfx_buzz.play()                    # 续播，长按期间持续“嗡嗡”
 	var target := Vector3(_manual_rot.x, _manual_rot.y, 0.0)
 	var weight := 1.0 - pow(0.002, delta)
 	_world.rotation = _world.rotation.lerp(target, weight)
 
-# ---------- 输入：缩放 / 旋转视角 / 点击磨削 ----------
+# ---------- 输入 ----------
+
+func _set_crushing(on: bool, pos: Vector2) -> void:
+	if on and not _crushing:
+		_crushing = true
+		_crush_screen = pos
+	elif not on and _crushing:
+		_crushing = false
+		_sfx_buzz.stop()
 
 func _unhandled_input(event: InputEvent) -> void:
+	# --- 触屏 ---
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			_touches[event.index] = event.position
 		else:
 			_touches.erase(event.index)
-		if _touches.size() >= 2:
-			_pinching = true
-			_carve_ok = false
-			_rotating = false
-			_pinch_dist = _two_touch_dist()
-			return
+		if _touches.size() == 1:
+			_set_crushing(true, _touches.values()[0])       # 单指 → 粉碎
 		else:
-			_pinching = false
+			_set_crushing(false, Vector2.ZERO)              # 0 或 2 指 → 停止粉碎
+			if _touches.size() == 2:
+				_pinch_dist = _two_touch_dist()
+				_pinch_mid = _two_touch_mid()
+		return
 	elif event is InputEventScreenDrag:
 		if _touches.has(event.index):
 			_touches[event.index] = event.position
-		if _pinching and _touches.size() >= 2:
+		if _touches.size() == 1:
+			_crush_screen = event.position                  # 拖动 → 挪动接触点
+		elif _touches.size() == 2:
 			var d := _two_touch_dist()
 			if _pinch_dist > 1.0 and d > 1.0:
 				_zoom_by(_pinch_dist / d)
 			_pinch_dist = d
-			return
+			var mid := _two_touch_mid()
+			_rotate_by(mid - _pinch_mid)                    # 双指平移 → 旋转视角
+			_pinch_mid = mid
+		return
 	elif event is InputEventMagnifyGesture:
 		_zoom_by(1.0 / event.factor)
 		return
-	elif event is InputEventMouseButton and event.pressed:
+
+	# --- 鼠标（桌面/Web） ---
+	elif event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_WHEEL_UP:
-			_zoom_by(0.9)
-			return
+			if event.pressed: _zoom_by(0.9)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN:
-			_zoom_by(1.0 / 0.9)
-			return
-
-	if _pinching:
-		return
-
-	if event is InputEventMouseButton or event is InputEventScreenTouch:
-		if event.pressed:
-			var lp := _pick_local(event.position)
-			_carve_ok = lp.z > 0.5           # z 分量作为命中标志
-			_carve_pos = Vector2(lp.x, lp.y)
-			_press_screen = event.position
-			_press_moved = false
-			_rotating = true
-		else:
-			if not _press_moved and _carve_ok:
-				_carve(_carve_pos)
-			_carve_ok = false
-			_rotating = false
-	elif event is InputEventMouseMotion or event is InputEventScreenDrag:
-		if _rotating:
-			if not _press_moved and event.position.distance_to(_press_screen) > 14.0:
-				_press_moved = true
+			if event.pressed: _zoom_by(1.0 / 0.9)
+		elif event.button_index == MOUSE_BUTTON_LEFT:
+			_set_crushing(event.pressed, event.position)    # 左键按住 → 粉碎
+		elif event.button_index == MOUSE_BUTTON_RIGHT:
+			_rotating = event.pressed                       # 右键拖 → 旋转视角
+	elif event is InputEventMouseMotion:
+		if _crushing:
+			_crush_screen = event.position
+		elif _rotating:
 			_rotate_by(event.relative)
-
-# 返回 (localX, localY, hit)：z=1 命中宝石、z=0 未命中。
-func _pick_local(screen_pos: Vector2) -> Vector3:
-	var from := _camera.project_ray_origin(screen_pos)
-	var dir := _camera.project_ray_normal(screen_pos)
-	var space := get_world_3d().direct_space_state
-	var q := PhysicsRayQueryParameters3D.create(from, from + dir * 100.0)
-	var hit := space.intersect_ray(q)
-	if not hit.is_empty() and hit.collider.has_meta("gem"):
-		var lp: Vector3 = _world.to_local(hit.position)
-		return Vector3(lp.x, lp.y, 1.0)
-	return Vector3(0, 0, 0)
 
 func _rotate_by(delta: Vector2) -> void:
 	_manual_rot.x -= delta.y * ROT_SENS
@@ -381,6 +375,12 @@ func _two_touch_dist() -> float:
 	if pts.size() < 2:
 		return 0.0
 	return (pts[0] as Vector2).distance_to(pts[1])
+
+func _two_touch_mid() -> Vector2:
+	var pts := _touches.values()
+	if pts.size() < 2:
+		return Vector2.ZERO
+	return ((pts[0] as Vector2) + (pts[1] as Vector2)) * 0.5
 
 func _zoom_by(ratio: float) -> void:
 	var d := clampf(_camera.position.length() * ratio, MIN_ZOOM, MAX_ZOOM)
