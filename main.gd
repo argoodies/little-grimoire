@@ -28,9 +28,12 @@ const MAX_ZOOM := 9.5                       # 相机最远距离
 
 # 三枚令牌：emoji、中文名、顶面色。
 const TOKENS := [
-	{"emoji": "🧩", "name": "解谜大师", "color": Color(0.28, 0.60, 0.68), "pos": Vector3(-0.78, 0.0, 0.36), "face": "res://textures/face_puzzle.png"},
-	{"emoji": "✝️", "name": "异端分子", "color": Color(0.76, 0.22, 0.24), "pos": Vector3(0.78, 0.0, 0.36), "face": "res://textures/face_cross.png"},
-	{"emoji": "👻", "name": "阎罗", "color": Color(0.46, 0.36, 0.72), "pos": Vector3(0.0, 0.0, -0.56), "face": "res://textures/face_book.png"},
+	{"emoji": "🧩", "name": "解谜大师", "color": Color(0.28, 0.60, 0.68), "pos": Vector3(-0.78, 0.0, 0.36), "face": "res://textures/face_puzzle.png",
+		"desc": "一名玩家醉酒，即使你已死亡。每局游戏限一次，你可以猜测谁是那个醉酒的玩家，如果猜对了，你会得知谁是恶魔，但如果猜错了，你会得知错误的“谁是恶魔”信息。"},
+	{"emoji": "✝️", "name": "异端分子", "color": Color(0.76, 0.22, 0.24), "pos": Vector3(0.78, 0.0, 0.36), "face": "res://textures/face_cross.png",
+		"desc": "反转善良邪恶的胜负条件，即使你已死亡。"},
+	{"emoji": "👻", "name": "阎罗", "color": Color(0.46, 0.36, 0.72), "pos": Vector3(0.0, 0.0, -0.56), "face": "res://textures/face_book.png",
+		"desc": "在你的首个夜晚，你能查看魔典并选择一名玩家：他在第三个夜晚死亡，即使因为任何原因让他不会死亡。每个夜晚，你要选择一名玩家：上个夜晚被你选择的玩家死亡。"},
 ]
 
 var _camera: Camera3D
@@ -47,6 +50,13 @@ var _press_screen := Vector2.ZERO            # 长按检测：按下位置
 var _press_moved := false                    # 按下后是否移动过（移动则算拖拽，不触发长按）
 var _intro := false                          # 开场翻转动画进行中（暂停常规旋转）
 var _intro_tween: Tween
+
+var _closeup := false                         # 单击令牌进入的俯视特写模式
+var _cam_saved := Transform3D.IDENTITY
+var _cam_tween: Tween
+var _closeup_layer: CanvasLayer
+var _closeup_name: Label
+var _closeup_desc: Label
 
 var _font: FontFile
 var _sfx_pick: AudioStreamPlayer
@@ -72,7 +82,89 @@ func _ready() -> void:
 	_build_board()
 	_spawn_tokens()
 	_build_toggle()
+	_build_closeup_ui()
 	_play_intro()
+
+# 底部技能介绍面板（特写模式显示）。
+func _build_closeup_ui() -> void:
+	_closeup_layer = CanvasLayer.new()
+	_closeup_layer.layer = 2                   # 在按钮(1)之上
+	add_child(_closeup_layer)
+	var panel := Panel.new()
+	panel.anchor_left = 0.0
+	panel.anchor_right = 1.0
+	panel.anchor_top = 1.0
+	panel.anchor_bottom = 1.0
+	panel.offset_top = -340.0
+	panel.offset_bottom = -32.0
+	panel.offset_left = 20.0
+	panel.offset_right = -20.0
+	panel.mouse_filter = Control.MOUSE_FILTER_IGNORE   # 点面板也能退出
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(0.06, 0.04, 0.11, 0.94)
+	sb.set_corner_radius_all(18)
+	sb.border_color = Color(1, 1, 1, 0.12)
+	sb.set_border_width_all(1)
+	panel.add_theme_stylebox_override("panel", sb)
+	_closeup_layer.add_child(panel)
+	var vb := VBoxContainer.new()
+	vb.set_anchors_preset(Control.PRESET_FULL_RECT)
+	vb.offset_left = 30.0
+	vb.offset_right = -30.0
+	vb.offset_top = 26.0
+	vb.offset_bottom = -26.0
+	vb.add_theme_constant_override("separation", 16)
+	vb.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	panel.add_child(vb)
+	_closeup_name = Label.new()
+	_closeup_name.add_theme_font_override("font", _font)
+	_closeup_name.add_theme_font_size_override("font_size", 44)
+	_closeup_name.add_theme_color_override("font_color", Color(0.96, 0.90, 1.0))
+	_closeup_name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(_closeup_name)
+	_closeup_desc = Label.new()
+	_closeup_desc.add_theme_font_override("font", _font)
+	_closeup_desc.add_theme_font_size_override("font_size", 27)
+	_closeup_desc.add_theme_color_override("font_color", Color(0.84, 0.80, 0.90))
+	_closeup_desc.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_closeup_desc.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(_closeup_desc)
+	var hint := Label.new()
+	hint.add_theme_font_override("font", _font)
+	hint.add_theme_font_size_override("font_size", 20)
+	hint.add_theme_color_override("font_color", Color(0.6, 0.55, 0.7))
+	hint.text = "触碰屏幕返回"
+	hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	hint.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	vb.add_child(hint)
+	_closeup_layer.visible = false
+
+# 单击令牌 → 俯视特写 + 底部技能介绍。
+func _enter_closeup(tk: Node3D) -> void:
+	if not tk.has_meta("cname"):
+		return                                 # 只有角色令牌能特写（纽扣不行）
+	_closeup = true
+	_cam_saved = _camera.transform
+	var tpos: Vector3 = tk.global_position
+	var cam_pos := tpos + Vector3(0.0, 1.05, 0.42)   # 近距离俯视
+	var target := Transform3D(Basis(), cam_pos).looking_at(tpos, Vector3.UP)
+	if _cam_tween != null and _cam_tween.is_valid():
+		_cam_tween.kill()
+	_cam_tween = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_cam_tween.tween_property(_camera, "transform", target, 0.45)
+	_closeup_name.text = tk.get_meta("cname")
+	_closeup_desc.text = tk.get_meta("cdesc")
+	_closeup_layer.visible = true
+	_sfx_pick.play()
+
+func _exit_closeup() -> void:
+	_closeup = false
+	_closeup_layer.visible = false
+	if _cam_tween != null and _cam_tween.is_valid():
+		_cam_tween.kill()
+	_cam_tween = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+	_cam_tween.tween_property(_camera, "transform", _cam_saved, 0.4)
+	_sfx_drop.play()
 
 # 开场：板子快速上下翻转 4 周后停下。
 func _play_intro() -> void:
@@ -383,6 +475,8 @@ func _make_token(data: Dictionary, is_top: bool, pos: Vector3) -> void:
 	body.position = Vector3(pos.x, base_y, pos.z)
 	body.set_meta("token", true)
 	body.set_meta("shroudable", true)  # 只有令牌可长按放死亡幡（纽扣不行）
+	body.set_meta("cname", data.name)  # 单击特写用
+	body.set_meta("cdesc", data.desc)
 	body.set_meta("plane_y", base_y)   # 拖拽时贴着自己这一面移动
 	body.set_meta("radius", TOKEN_RADIUS)
 	_table.add_child(body)
@@ -395,8 +489,8 @@ func _rotate_by(delta: Vector2) -> void:
 
 ## 每帧：板子 = 重力倾斜（有传感器才动）+ 拖拽累积的手动旋转。
 func _process(delta: float) -> void:
-	if _intro:
-		return                                # 开场动画期间不做常规旋转/分离
+	if _intro or _closeup:
+		return                                # 开场/特写期间不做常规旋转/分离
 	var g := Input.get_gravity()
 	var grav := Vector3.ZERO
 	if g.length() > 0.5:
@@ -452,6 +546,11 @@ func _separate() -> void:
 
 ## 交互：按下→命中令牌抓起（响“嗒”）；拖动→贴板面平移（滑动“哒”）；松开→放下（“咚”）。
 func _unhandled_input(event: InputEvent) -> void:
+	# 特写模式：任意触碰返回，忽略其它交互。
+	if _closeup:
+		if (event is InputEventMouseButton or event is InputEventScreenTouch) and event.pressed:
+			_exit_closeup()
+		return
 	# --- 缩放：双指捏合 / 触控板 / 鼠标滚轮 ---
 	if event is InputEventScreenTouch:
 		if event.pressed:
@@ -496,9 +595,12 @@ func _unhandled_input(event: InputEvent) -> void:
 			_try_pick(event.position)
 		else:
 			if _dragging != null:
-				# 松手瞬间随机歪斜 ±15°（绕自身垂直轴，像随手一放）。
-				_dragging.rotation = Vector3(0.0, randf_range(-deg_to_rad(15.0), deg_to_rad(15.0)), 0.0)
-				_sfx_drop.play()
+				if _press_moved:
+					# 拖动后松手：随机歪斜 ±15°。
+					_dragging.rotation = Vector3(0.0, randf_range(-deg_to_rad(15.0), deg_to_rad(15.0)), 0.0)
+					_sfx_drop.play()
+				else:
+					_enter_closeup(_dragging)   # 单击(未移动) → 俯视特写
 			_dragging = null
 			_rotating = false
 	elif event is InputEventMouseMotion or event is InputEventScreenDrag:
