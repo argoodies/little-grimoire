@@ -301,9 +301,9 @@ void fragment() {
 	float fres = pow(1.0 - clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0), 3.0);
 	float crystal_alpha = mix(0.22, 0.85, fres);
 	ALBEDO = mix(powder_color, diamond_color, reveal);
-	ROUGHNESS = mix(0.92, 0.04, reveal);       // 白粉粗糙 → 水晶光滑
-	METALLIC = mix(0.0, 0.25, reveal);
-	SPECULAR = mix(0.15, 1.0, reveal);
+	ROUGHNESS = mix(1.0, 0.0, reveal);         // 灰尘纯漫反射 → 水晶镜面光滑
+	METALLIC = mix(0.0, 0.5, reveal);          // 水晶更反光
+	SPECULAR = mix(0.0, 1.0, reveal);          // 灰尘无镜面 → 水晶强镜面
 	EMISSION = diamond_color * (0.4 * reveal);  // 露出处微辉，配内部光/泛光
 	ALPHA = mix(1.0, crystal_alpha, reveal);    // 白粉不透明 → 冲刷露出后透明
 }
