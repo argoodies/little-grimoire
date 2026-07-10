@@ -202,7 +202,7 @@ func _make_shader() -> Shader:
 	var sh := Shader.new()
 	sh.code = """
 shader_type spatial;
-render_mode specular_schlick_ggx;
+render_mode blend_mix, cull_disabled, specular_schlick_ggx;
 
 uniform vec4 wash_points[80];
 uniform vec3 powder_color : source_color = vec3(0.95, 0.96, 0.98);
@@ -223,11 +223,15 @@ void fragment() {
 			reveal = max(reveal, 1.0 - smoothstep(r * 0.6, r, d));
 		}
 	}
+	// 菲涅尔：边缘更实、正对更透，像水晶。
+	float fres = pow(1.0 - clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0), 3.0);
+	float crystal_alpha = mix(0.22, 0.85, fres);
 	ALBEDO = mix(powder_color, diamond_color, reveal);
-	ROUGHNESS = mix(0.92, 0.05, reveal);       // 白粉粗糙 → 钻石光滑
-	METALLIC = mix(0.0, 0.3, reveal);
+	ROUGHNESS = mix(0.92, 0.04, reveal);       // 白粉粗糙 → 水晶光滑
+	METALLIC = mix(0.0, 0.25, reveal);
 	SPECULAR = mix(0.15, 1.0, reveal);
-	EMISSION = diamond_color * (0.35 * reveal); // 露出处微辉，配泛光
+	EMISSION = diamond_color * (0.4 * reveal);  // 露出处微辉，配内部光/泛光
+	ALPHA = mix(1.0, crystal_alpha, reveal);    // 白粉不透明 → 冲刷露出后透明
 }
 """
 	return sh
