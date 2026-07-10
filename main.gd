@@ -540,7 +540,7 @@ func _on_long_press(tk: StaticBody3D) -> void:
 		Input.vibrate_handheld(40)             # 系统震动
 		_dragging = null                       # 长按后不再拖动/落下
 
-# 在令牌上叠加/移除死亡幡（billboard，始终朝相机、盖在最上层）。
+# 在令牌上叠加/移除死亡幡（平铺在令牌平面上，随令牌一起转翻）。
 func _toggle_shroud(tk: Node3D) -> void:
 	if tk.has_meta("shroud"):
 		var old = tk.get_meta("shroud")
@@ -548,14 +548,21 @@ func _toggle_shroud(tk: Node3D) -> void:
 			old.queue_free()
 		tk.remove_meta("shroud")
 		return
-	var tex: Texture2D = load("res://textures/shroud.png")
-	var sh := Sprite3D.new()
-	sh.texture = tex
-	sh.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	sh.no_depth_test = true
+	var mat := StandardMaterial3D.new()
+	mat.albedo_texture = load("res://textures/shroud.png")
+	mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+	mat.alpha_scissor_threshold = 0.5
+	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.roughness = 1.0
+	var sh := MeshInstance3D.new()
+	var quad := QuadMesh.new()
 	var r: float = tk.get_meta("radius")
-	sh.pixel_size = (r * 2.4) / float(tex.get_width())
-	sh.position = Vector3(0.0, 0.03, 0.0)
+	var longest := r                                 # 最长边 = 半径 = 令牌直径一半
+	quad.size = Vector2(longest * 95.0 / 135.0, longest)   # 贴图长宽比 95:135
+	sh.mesh = quad
+	sh.material_override = mat
+	sh.rotation_degrees = Vector3(-90.0, 0.0, 0.0)   # 躺平在令牌平面上
+	sh.position = Vector3(0.0, 0.012, 0.0)           # 略高于牌面
 	tk.add_child(sh)
 	tk.set_meta("shroud", sh)
 
