@@ -323,7 +323,7 @@ func _build_model(path: String) -> void:
 	_core_light = OmniLight3D.new()
 	_core_light.position = Vector3.ZERO
 	_core_light.light_color = Color(0.5, 0.75, 1.0)
-	_core_light.light_energy = 1.2
+	_core_light.light_energy = 2.6
 	_core_light.omni_range = TARGET_W * 1.2
 	_core_light.shadow_enabled = false
 	_world.add_child(_core_light)
@@ -451,7 +451,7 @@ uniform vec2 light_uv = vec2(0.5, 0.5);      // 水晶屏幕位置（光心）
 uniform float density = 0.7;
 uniform float decayf = 0.95;
 uniform float weight = 0.5;
-uniform float exposure = 0.6;
+uniform float exposure = 1.0;
 uniform float threshold = 0.72;              // 亮部阈值（用最大通道，蓝水晶也算亮）
 
 const int SAMPLES = 32;
