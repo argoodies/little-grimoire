@@ -332,7 +332,7 @@ func _build_model(path: String) -> void:
 func _seed_dust() -> void:
 	_mask_img.fill(Color(0, 0, 0))          # 全部覆尘
 	if not _uvs.is_empty():
-		for i in 12:                        # 随机撒约 5% 无尘点
+		for i in 24:                        # 随机撒约 10% 无尘点（初始 90% 覆灰）
 			var k := randi() % _uvs.size()
 			_paint(_uvs[k], SEED_UV_R, false)
 	_mask_tex.update(_mask_img)
@@ -397,7 +397,7 @@ func _restart() -> void:
 	_spin4()
 	_save_state()
 
-# 冲刷进度检测：无尘顶点占比 ≥ 99% → 进入可交付态。
+# 冲刷进度检测：无尘顶点占比 ≥ 99.9% → 进入可交付态。
 func _check_coverage() -> void:
 	if _btn_state != ST_REFRESH or _uvs.is_empty():
 		return
@@ -407,7 +407,7 @@ func _check_coverage() -> void:
 		var py := clampi(int(_uvs[i].y * MSZ), 0, MSZ - 1)
 		if _mask_img.get_pixel(px, py).r > 0.5:
 			cleaned += 1
-	if float(cleaned) / float(_uvs.size()) >= 0.99:
+	if float(cleaned) / float(_uvs.size()) >= 0.999:
 		_enter_circle()
 
 # 让水晶旋转 4 整圈后回正；刷新按钮图标同步转 4 圈。
