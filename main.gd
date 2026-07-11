@@ -53,6 +53,7 @@ var _sfx_click: AudioStreamPlayer
 var _sfx_whoosh: AudioStreamPlayer
 var _godray_mat: ShaderMaterial
 var _spray_fx: CPUParticles3D             # 喷水水花粒子
+var _spray_tail := 0.0                     # 松手后喷水拖尾剩余时间（秒）
 var _dir: DirectionalLight3D
 var _spot: SpotLight3D
 var _env: Environment
@@ -605,8 +606,8 @@ func _spray(screen_pos: Vector2) -> void:
 func _process(delta: float) -> void:
 	if _spinning:
 		return                                # 旋转 4 周动画期间由 tween 接管
-	_spray_fx.emitting = _washing            # 擦拭时喷水
 	if _washing:
+		_spray_fx.emitting = true            # 擦拭时喷水（_spray 命中模型外会置 false）
 		_spray(_wash_screen)
 		if not _sfx_water.playing:
 			_sfx_water.play()
@@ -614,6 +615,11 @@ func _process(delta: float) -> void:
 		if _cov_tick >= 12:                        # 节流：约每 12 帧查一次覆盖率
 			_cov_tick = 0
 			_check_coverage()
+	elif _spray_tail > 0.0:                   # 松手后拖尾：在原接触点继续喷一小会儿再停
+		_spray_tail -= delta
+		_spray_fx.emitting = true
+	else:
+		_spray_fx.emitting = false
 	var target := Vector3(_manual_rot.x, _manual_rot.y, 0.0)
 	var weight := 1.0 - pow(0.002, delta)
 	_world.rotation = _world.rotation.lerp(target, weight)
@@ -629,9 +635,11 @@ func _process(delta: float) -> void:
 func _set_washing(on: bool, pos: Vector2) -> void:
 	if on and not _washing:
 		_washing = true
+		_spray_tail = 0.0                   # 重新擦拭：取消上次的拖尾
 		_wash_screen = pos
 	elif not on and _washing:
 		_washing = false
+		_spray_tail = 0.45                  # 松手后喷水再拖尾 0.45s，渐渐消失
 		_sfx_water.stop()
 		_save_state()                       # 每次擦拭松手保存进度
 
