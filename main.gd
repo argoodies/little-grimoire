@@ -53,6 +53,9 @@ var _sfx_click: AudioStreamPlayer
 var _sfx_whoosh: AudioStreamPlayer
 var _godray_mat: ShaderMaterial
 var _spray_fx: CPUParticles3D             # 喷水水花粒子
+var _droplet_mat: StandardMaterial3D      # 水珠共享材质（松手时整体淡出）
+var _fade_tween: Tween                     # 松手后整体淡出的 tween
+const DROP_ALPHA := 0.2                     # 水珠透明度
 var _wash_hitting := false                 # 正在擦拭且射线命中了模型
 var _moved := false                         # 本帧手指是否移动：移动才喷水珠
 var _dir: DirectionalLight3D
@@ -500,11 +503,7 @@ func _build_spray_fx() -> void:
 	p.scale_amount_max = 0.010
 	# 生命周期透明度：出生满(×base 0.08)→在 80% 处就淡到 0 并保持，
 	# 让末尾(含粒子回收边界)已全透明，避免结尾闪一下。
-	# 出生淡入 + 死亡淡出：旧的淡出、新的淡入，回收交接无缝（看不到"它回来那一下"）。
-	var grad := Gradient.new()
-	grad.offsets = PackedFloat32Array([0.0, 0.25, 0.75, 1.0])
-	grad.colors = PackedColorArray([Color(1, 1, 1, 0), Color(1, 1, 1, 1), Color(1, 1, 1, 1), Color(1, 1, 1, 0)])
-	p.color_ramp = grad
+	# 不做逐颗淡入淡出：擦拭时所有水珠恒定；整体淡出交给松手时 tween 材质透明度。
 	var qm := QuadMesh.new()
 	qm.size = Vector2.ONE
 	var mat := StandardMaterial3D.new()
@@ -513,7 +512,8 @@ func _build_spray_fx() -> void:
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.albedo_texture = load("res://textures/droplet.png")   # 圆形水珠贴图
-	mat.albedo_color = Color(0.6, 0.72, 0.9, 0.2)      # 淡水色
+	mat.albedo_color = Color(0.6, 0.72, 0.9, DROP_ALPHA)   # 淡水色
+	_droplet_mat = mat
 	qm.material = mat
 	p.mesh = qm
 	add_child(p)
@@ -648,9 +648,19 @@ func _set_washing(on: bool, pos: Vector2) -> void:
 	if on and not _washing:
 		_washing = true
 		_wash_screen = pos
+		if _fade_tween != null and _fade_tween.is_valid():
+			_fade_tween.kill()              # 取消淡出
+		var c := _droplet_mat.albedo_color
+		c.a = DROP_ALPHA                    # 恢复满透明度
+		_droplet_mat.albedo_color = c
 	elif not on and _washing:
 		_washing = false
 		_sfx_water.stop()
+		# 松手：整个喷水系统在 0.4s 内整体淡出到 0。
+		if _fade_tween != null and _fade_tween.is_valid():
+			_fade_tween.kill()
+		_fade_tween = create_tween()
+		_fade_tween.tween_property(_droplet_mat, "albedo_color:a", 0.0, 0.4)
 		_save_state()                       # 每次擦拭松手保存进度
 
 func _unhandled_input(event: InputEvent) -> void:
