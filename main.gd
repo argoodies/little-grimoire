@@ -502,7 +502,7 @@ func _build_spray_fx() -> void:
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.albedo_texture = load("res://textures/droplet.png")   # 圆形水珠贴图
-	mat.albedo_color = Color(0.52, 0.62, 0.72, 0.85)   # 蓝水色，屏幕亮度低于神光阈值(0.72)，不结成亮球
+	mat.albedo_color = Color(0.6, 0.72, 0.9, 0.85)     # 亮蓝水色（接触点已靠淡入避免结球）
 	qm.material = mat
 	p.mesh = qm
 	add_child(p)
