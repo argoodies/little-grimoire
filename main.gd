@@ -42,6 +42,7 @@ var _wash_screen := Vector2.ZERO
 var _sfx_water: AudioStreamPlayer
 var _sfx_reward: AudioStreamPlayer
 var _sfx_ding: AudioStreamPlayer
+var _godray_mat: ShaderMaterial
 var _dir: DirectionalLight3D
 var _spot: SpotLight3D
 var _env: Environment
@@ -57,6 +58,7 @@ func _ready() -> void:
 	_world = Node3D.new()
 	add_child(_world)
 	_build_diamond()
+	_build_godrays()
 	_build_toggle()
 	_spin4()                                  # 初始也旋转 4 周
 
@@ -324,6 +326,50 @@ func _spin4() -> void:
 		create_tween().set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT) \
 			.tween_property(_refresh_btn, "rotation", TAU * 4.0, 1.9)
 
+# 屏幕空间体积光（丁达尔/神光）：以水晶屏幕位置为光心，把亮部沿放射方向拖成光柱叠加。
+func _build_godrays() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 0                          # 在 3D 之上、UI 按钮(layer 1)之下
+	add_child(layer)
+	var rect := ColorRect.new()
+	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
+	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_godray_mat = ShaderMaterial.new()
+	var sh := Shader.new()
+	sh.code = """
+shader_type canvas_item;
+render_mode blend_add;                       // 叠加：只往画面加光，不遮挡
+
+uniform sampler2D screen_tex : hint_screen_texture, filter_linear;
+uniform vec2 light_uv = vec2(0.5, 0.5);      // 水晶屏幕位置（光心）
+uniform float density = 0.7;
+uniform float decayf = 0.95;
+uniform float weight = 0.5;
+uniform float exposure = 0.55;
+uniform float threshold = 0.55;              // 只有亮部拉出光芒
+
+const int SAMPLES = 32;
+
+void fragment() {
+	vec2 uv = SCREEN_UV;
+	vec2 delta = (uv - light_uv) * density / float(SAMPLES);
+	vec3 col = vec3(0.0);
+	float illum = 1.0;
+	vec2 samp = uv;
+	for (int i = 0; i < SAMPLES; i++) {
+		samp -= delta;                       // 朝光心步进
+		vec3 s = texture(screen_tex, samp).rgb;
+		float b = max(0.0, dot(s, vec3(0.299, 0.587, 0.114)) - threshold);
+		col += s * b * illum * weight;
+		illum *= decayf;
+	}
+	COLOR = vec4(col * exposure, 1.0);
+}
+"""
+	_godray_mat.shader = sh
+	rect.material = _godray_mat
+	layer.add_child(rect)
+
 func _find_mesh(n: Node) -> MeshInstance3D:
 	if n is MeshInstance3D:
 		return n
@@ -410,6 +456,12 @@ func _process(delta: float) -> void:
 	var target := Vector3(_manual_rot.x, _manual_rot.y, 0.0)
 	var weight := 1.0 - pow(0.002, delta)
 	_world.rotation = _world.rotation.lerp(target, weight)
+	# 神光光心 = 水晶中心（原点）的屏幕位置。
+	if _godray_mat != null:
+		var vp := get_viewport().get_visible_rect().size
+		if vp.x > 0.0 and vp.y > 0.0:
+			var sp := _camera.unproject_position(Vector3.ZERO)
+			_godray_mat.set_shader_parameter("light_uv", sp / vp)
 
 # ---------- 输入 ----------
 
