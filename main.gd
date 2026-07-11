@@ -290,7 +290,7 @@ func _build_diamond() -> void:
 	var core := OmniLight3D.new()
 	core.position = Vector3.ZERO
 	core.light_color = Color(0.5, 0.75, 1.0)
-	core.light_energy = 2.2
+	core.light_energy = 1.2
 	core.omni_range = TARGET_W * 1.2
 	core.shadow_enabled = false
 	_world.add_child(core)
