@@ -53,6 +53,7 @@ var _sfx_click: AudioStreamPlayer
 var _sfx_whoosh: AudioStreamPlayer
 var _godray_mat: ShaderMaterial
 var _spray_fx: CPUParticles3D             # 喷水水花粒子
+var _wash_hitting := false                 # 正在擦拭且射线命中了模型
 var _dir: DirectionalLight3D
 var _spot: SpotLight3D
 var _env: Environment
@@ -590,9 +591,9 @@ func _spray(screen_pos: Vector2) -> void:
 	var q := PhysicsRayQueryParameters3D.create(wo, wo + wd * 100.0)
 	var hit := space.intersect_ray(q)
 	if hit.is_empty():
-		if _spray_fx.emitting:
-			_spray_fx.emitting = false           # 拖到模型外：停止喷水，不再停在原地
+		_wash_hitting = false                    # 拖到模型外：不喷水（由 _process 统一控制 emitting）
 		return
+	_wash_hitting = true
 	_spray_fx.global_position = hit.position     # 水花从接触点喷出
 	# 命中处最近顶点的 UV → 在遮罩上冲刷（UV 分岛天然只作用命中的那一面）。
 	var local: Vector3 = _mesh.global_transform.affine_inverse() * (hit.position as Vector3)
@@ -610,16 +611,20 @@ func _spray(screen_pos: Vector2) -> void:
 func _process(delta: float) -> void:
 	if _spinning:
 		return                                # 旋转 4 周动画期间由 tween 接管
-	if _spray_fx.emitting != _washing:       # 仅在状态改变时设置，避免每帧重启粒子
-		_spray_fx.emitting = _washing
 	if _washing:
-		_spray(_wash_screen)
+		_spray(_wash_screen)                 # 更新 _wash_hitting
 		if not _sfx_water.playing:
 			_sfx_water.play()
 		_cov_tick += 1
 		if _cov_tick >= 12:                        # 节流：约每 12 帧查一次覆盖率
 			_cov_tick = 0
 			_check_coverage()
+	else:
+		_wash_hitting = false
+	# 仅当"正在擦拭且命中模型"才喷；且只在状态改变时设置，避免每帧重启粒子。
+	var want_emit := _washing and _wash_hitting
+	if _spray_fx.emitting != want_emit:
+		_spray_fx.emitting = want_emit
 	var target := Vector3(_manual_rot.x, _manual_rot.y, 0.0)
 	var weight := 1.0 - pow(0.002, delta)
 	_world.rotation = _world.rotation.lerp(target, weight)
