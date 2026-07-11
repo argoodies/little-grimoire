@@ -487,8 +487,8 @@ func _build_spray_fx() -> void:
 	p.gravity = Vector3(0.0, -5.0, 0.0)
 	p.damping_min = 1.0
 	p.damping_max = 2.5
-	p.scale_amount_min = 0.0006
-	p.scale_amount_max = 0.0016
+	p.scale_amount_min = 0.00003
+	p.scale_amount_max = 0.00008
 	# 生命周期透明度：出生透明→飞出一点才显现→末尾淡出，接触点不再有一簇。
 	var grad := Gradient.new()
 	grad.offsets = PackedFloat32Array([0.0, 0.25, 0.75, 1.0])
