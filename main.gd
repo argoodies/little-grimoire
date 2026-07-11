@@ -49,6 +49,8 @@ var _wash_screen := Vector2.ZERO
 var _sfx_water: AudioStreamPlayer
 var _sfx_reward: AudioStreamPlayer
 var _sfx_ding: AudioStreamPlayer
+var _sfx_click: AudioStreamPlayer
+var _sfx_whoosh: AudioStreamPlayer
 var _godray_mat: ShaderMaterial
 var _dir: DirectionalLight3D
 var _spot: SpotLight3D
@@ -136,6 +138,14 @@ func _build_audio() -> void:
 	_sfx_ding.stream = load("res://sounds/ding.wav")
 	_sfx_ding.volume_db = 0.0
 	add_child(_sfx_ding)
+	_sfx_click = AudioStreamPlayer.new()
+	_sfx_click.stream = load("res://sounds/click.wav")
+	_sfx_click.volume_db = 0.0
+	add_child(_sfx_click)
+	_sfx_whoosh = AudioStreamPlayer.new()
+	_sfx_whoosh.stream = load("res://sounds/shroud.wav")
+	_sfx_whoosh.volume_db = 0.0
+	add_child(_sfx_whoosh)
 
 func _build_environment() -> void:
 	var we := WorldEnvironment.new()
@@ -236,6 +246,7 @@ func _apply_safe_area() -> void:
 
 func _on_toggle() -> void:
 	_night = not _night
+	_sfx_click.play()
 	_apply_lighting(true)
 	_save_state()
 
@@ -374,6 +385,7 @@ func _restart() -> void:
 	_btn_state = ST_REFRESH
 	_delivered = false
 	_refresh_btn.icon = load("res://textures/icon_refresh.png")
+	_sfx_whoosh.play()                              # 刷新音效（配合旋转）
 	_model_path = MODELS[randi() % MODELS.size()]   # 随机换模型
 	_mask_img = Image.create(MSZ, MSZ, false, Image.FORMAT_L8)
 	_build_model(_model_path)
