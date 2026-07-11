@@ -91,7 +91,7 @@ func _build_environment() -> void:
 	_env.glow_strength = 1.05
 	_env.glow_bloom = 0.25
 	_env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SCREEN
-	_env.glow_hdr_threshold = 0.9
+	_env.glow_hdr_threshold = 1.1                 # 只有很亮的水晶高光才泛光，哑光灰尘不泛
 	_env.set_glow_level(4, 1.0)
 	_env.set_glow_level(5, 0.6)
 	we.environment = _env
@@ -346,7 +346,7 @@ uniform float density = 0.7;
 uniform float decayf = 0.95;
 uniform float weight = 0.5;
 uniform float exposure = 0.55;
-uniform float threshold = 0.55;              // 只有亮部拉出光芒
+uniform float threshold = 0.82;              // 抬高：只有水晶高光出神光，哑光灰尘不出
 
 const int SAMPLES = 32;
 
@@ -386,7 +386,7 @@ shader_type spatial;
 render_mode blend_mix, cull_disabled, specular_schlick_ggx;
 
 uniform sampler2D wash_mask : filter_linear;
-uniform vec3 powder_color : source_color = vec3(0.52, 0.52, 0.54);
+uniform vec3 powder_color : source_color = vec3(0.40, 0.40, 0.42);
 uniform vec3 diamond_color : source_color = vec3(0.12, 0.42, 0.92);
 
 void fragment() {
