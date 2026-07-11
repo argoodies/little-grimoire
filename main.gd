@@ -487,8 +487,8 @@ func _build_spray_fx() -> void:
 	p.gravity = Vector3(0.0, -5.0, 0.0)
 	p.damping_min = 1.0
 	p.damping_max = 2.5
-	p.scale_amount_min = 0.00003
-	p.scale_amount_max = 0.00008
+	p.scale_amount_min = 0.004
+	p.scale_amount_max = 0.010
 	# 生命周期透明度：出生透明→飞出一点才显现→末尾淡出，接触点不再有一簇。
 	var grad := Gradient.new()
 	grad.offsets = PackedFloat32Array([0.0, 0.25, 0.75, 1.0])
@@ -502,7 +502,7 @@ func _build_spray_fx() -> void:
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	mat.albedo_texture = load("res://textures/droplet.png")   # 圆形水珠贴图
-	mat.albedo_color = Color(0.58, 0.68, 0.72, 0.9)    # 亮蓝水色，但屏幕亮度压在神光阈值(0.72)下，不被抓成光球
+	mat.albedo_color = Color(0.6, 0.72, 0.9, 0.16)     # 近乎纯透明的淡水雾：贡献极低亮度，神光不结球
 	qm.material = mat
 	p.mesh = qm
 	add_child(p)
