@@ -8,6 +8,8 @@ const TARGET_W := 1.8                    # 模型最长边世界尺寸
 const ROT_SENS := 0.006
 const MIN_ZOOM := 2.0
 const MAX_ZOOM := 8.0
+const SAVE_MASK := "user://wipe_mask.png"    # 擦拭进度遮罩
+const SAVE_STATE := "user://wipe_state.json" # 按钮态/交付/日夜
 const MSZ := 512                         # 冲刷遮罩纹理尺寸
 const WASH_UV_R := 0.035                  # 冲刷笔刷半径（UV 空间）
 const SEED_UV_R := 0.02                   # 初始无尘点半径（UV 空间）
@@ -60,7 +62,50 @@ func _ready() -> void:
 	_build_diamond()
 	_build_godrays()
 	_build_toggle()
+	_apply_loaded_ui()                        # 恢复存档的按钮态/日夜
 	_spin4()                                  # 初始也旋转 4 周
+
+# ---------- 存档 ----------
+
+func _save_state() -> void:
+	if _mask_img != null:
+		_mask_img.save_png(SAVE_MASK)
+	var f := FileAccess.open(SAVE_STATE, FileAccess.WRITE)
+	if f != null:
+		f.store_string(JSON.stringify({"btn": _btn_state, "delivered": _delivered, "night": _night}))
+		f.close()
+
+# 读存档：成功则填好 _mask_img + 状态，返回 true。
+func _load_state() -> bool:
+	if not FileAccess.file_exists(SAVE_MASK):
+		return false
+	var img := Image.load_from_file(SAVE_MASK)
+	if img == null or img.get_width() != MSZ or img.get_height() != MSZ:
+		return false
+	img.convert(Image.FORMAT_L8)
+	_mask_img = img
+	if FileAccess.file_exists(SAVE_STATE):
+		var cfg = JSON.parse_string(FileAccess.get_file_as_string(SAVE_STATE))
+		if cfg is Dictionary:
+			_btn_state = int(cfg.get("btn", ST_REFRESH))
+			_delivered = bool(cfg.get("delivered", false))
+			_night = bool(cfg.get("night", false))
+	return true
+
+# 按已读入的状态设置按钮图标与日夜光照。
+func _apply_loaded_ui() -> void:
+	if _btn_state == ST_CIRCLE:
+		_refresh_btn.icon = load("res://textures/icon_circle.png")
+	elif _btn_state == ST_DELIVERED:
+		_refresh_btn.icon = load("res://textures/icon_check.png")
+	if _night:
+		_apply_lighting(false)
+
+func _notification(what: int) -> void:
+	if what == NOTIFICATION_WM_CLOSE_REQUEST \
+			or what == NOTIFICATION_APPLICATION_PAUSED \
+			or what == NOTIFICATION_WM_GO_BACK_REQUEST:
+		_save_state()
 
 # ---------- 基础环境 ----------
 
@@ -178,6 +223,7 @@ func _apply_safe_area() -> void:
 func _on_toggle() -> void:
 	_night = not _night
 	_apply_lighting(true)
+	_save_state()
 
 func _apply_lighting(animate: bool) -> void:
 	var dir_c := Color(0.62, 0.74, 1.0) if _night else Color(1.0, 0.94, 0.85)
@@ -217,12 +263,15 @@ func _build_diamond() -> void:
 	var arrays := _mesh.mesh.surface_get_arrays(0)
 	_verts = arrays[Mesh.ARRAY_VERTEX]
 	_uvs = arrays[Mesh.ARRAY_TEX_UV]
-	# 冲刷遮罩纹理：随模型 UV，覆盖无上限。
-	_mask_img = Image.create(MSZ, MSZ, false, Image.FORMAT_L8)
+	# 冲刷遮罩纹理：随模型 UV，覆盖无上限。优先读取存档，否则随机覆尘。
+	var loaded := _load_state()
+	if not loaded:
+		_mask_img = Image.create(MSZ, MSZ, false, Image.FORMAT_L8)
 	_mask_tex = ImageTexture.create_from_image(_mask_img)
 	_mat.set_shader_parameter("wash_mask", _mask_tex)
 	_mesh.material_override = _mat
-	_seed_dust()                            # 初始：95% 有尘，随机 5% 已无尘
+	if not loaded:
+		_seed_dust()                        # 新开局：95% 有尘，随机 5% 已无尘
 
 	# 三角网碰撞体，供射线拾取冲刷点。
 	_mesh.create_trimesh_collision()
@@ -280,6 +329,7 @@ func _enter_circle() -> void:
 	_btn_state = ST_CIRCLE
 	_refresh_btn.icon = load("res://textures/icon_circle.png")
 	_sfx_ding.play()                        # 首次达 99% → 短“叮”提示可完成
+	_save_state()
 
 # 点击圆圈 → 交付：变对勾、奖励音、禁冲刷（只能旋转）。
 func _enter_delivered() -> void:
@@ -289,6 +339,7 @@ func _enter_delivered() -> void:
 	_washing = false
 	_sfx_water.stop()
 	_sfx_reward.play()
+	_save_state()
 
 # 刷新/重新开始：重置覆尘态并旋转 4 周。
 func _restart() -> void:
@@ -297,6 +348,7 @@ func _restart() -> void:
 	_refresh_btn.icon = load("res://textures/icon_refresh.png")
 	_seed_dust()
 	_spin4()
+	_save_state()
 
 # 冲刷进度检测：无尘顶点占比 ≥ 99% → 进入可交付态。
 func _check_coverage() -> void:
@@ -472,6 +524,7 @@ func _set_washing(on: bool, pos: Vector2) -> void:
 	elif not on and _washing:
 		_washing = false
 		_sfx_water.stop()
+		_save_state()                       # 每次擦拭松手保存进度
 
 func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
