@@ -394,7 +394,10 @@ func _check_coverage() -> void:
 func _spin4() -> void:
 	_spinning = true
 	_manual_rot = Vector3.ZERO
-	var axis := Vector3(0.5, 1.0, 0.1).normalized()
+	var axis := Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), randf_range(-1.0, 1.0))
+	if axis.length() < 0.01:
+		axis = Vector3.UP
+	axis = axis.normalized()
 	var tw := create_tween().set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
 	tw.tween_method(
 		func(a: float): _world.transform = Transform3D(Basis(axis, a), Vector3.ZERO),
