@@ -447,7 +447,7 @@ uniform float density = 0.7;
 uniform float decayf = 0.95;
 uniform float weight = 0.5;
 uniform float exposure = 0.6;
-uniform float threshold = 0.72;              // 亮部阈值（用最大通道，蓝水晶也算亮）
+uniform float threshold = 0.85;              // 亮部阈值：水珠叠起来也够不到，只有水晶强高光出神光
 
 const int SAMPLES = 32;
 
