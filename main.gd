@@ -230,6 +230,10 @@ func _apply_lighting(animate: bool) -> void:
 	var spot_c := Color(0.5, 0.68, 1.0) if _night else Color(1.0, 0.9, 0.72)
 	var bg_c := Color(0, 0, 0)                 # 背景始终纯黑
 	var amb_c := Color(0.30, 0.40, 0.60) if _night else Color(0.42, 0.36, 0.52)
+	# 月光模式：整体更暗
+	var dir_e := 0.45 if _night else 1.05
+	var spot_e := 3.0 if _night else 6.5
+	var amb_e := 0.32 if _night else 0.6
 	_toggle_btn.text = "🌙" if _night else "☀️"
 	if animate:
 		var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_SINE)
@@ -237,11 +241,17 @@ func _apply_lighting(animate: bool) -> void:
 		tw.tween_property(_spot, "light_color", spot_c, 0.5)
 		tw.tween_property(_env, "background_color", bg_c, 0.5)
 		tw.tween_property(_env, "ambient_light_color", amb_c, 0.5)
+		tw.tween_property(_dir, "light_energy", dir_e, 0.5)
+		tw.tween_property(_spot, "light_energy", spot_e, 0.5)
+		tw.tween_property(_env, "ambient_light_energy", amb_e, 0.5)
 	else:
 		_dir.light_color = dir_c
 		_spot.light_color = spot_c
 		_env.background_color = bg_c
 		_env.ambient_light_color = amb_c
+		_dir.light_energy = dir_e
+		_spot.light_energy = spot_e
+		_env.ambient_light_energy = amb_e
 
 # ---------- 覆粉钻石 ----------
 
