@@ -335,7 +335,7 @@ func _build_model(path: String) -> void:
 func _seed_dust() -> void:
 	_mask_img.fill(Color(0, 0, 0))          # 全部覆尘
 	if not _uvs.is_empty():
-		for i in 24:                        # 随机撒约 10% 无尘点（初始 90% 覆灰）
+		for i in 50:                        # 随机撒约 20% 无尘点（初始 80% 覆灰）
 			var k := randi() % _uvs.size()
 			_paint(_uvs[k], SEED_UV_R, false)
 	_mask_tex.update(_mask_img)
