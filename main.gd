@@ -494,7 +494,8 @@ func _build_spray_fx() -> void:
 	mat.blend_mode = BaseMaterial3D.BLEND_MODE_MIX     # 普通混合，不再加法炸光
 	mat.billboard_mode = BaseMaterial3D.BILLBOARD_ENABLED
 	mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	mat.albedo_color = Color(0.45, 0.55, 0.66, 0.55)   # 调暗，低于神光/泛光阈值
+	mat.albedo_texture = load("res://textures/droplet.png")   # 圆形水珠贴图
+	mat.albedo_color = Color(0.6, 0.72, 0.9, 0.8)      # 淡蓝水色，低于神光阈值
 	qm.material = mat
 	p.mesh = qm
 	add_child(p)
