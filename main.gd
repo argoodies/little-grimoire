@@ -479,7 +479,7 @@ func _build_spray_fx() -> void:
 	p.lifetime = 0.5
 	p.local_coords = false                 # 世界空间：拖动时留下水痕
 	p.emission_shape = CPUParticles3D.EMISSION_SHAPE_SPHERE_SURFACE   # 从小球面发射，不再单点堆成一团
-	p.emission_sphere_radius = 0.06
+	p.emission_sphere_radius = 0.003
 	p.direction = Vector3(0.0, 0.5, 1.0).normalized()
 	p.spread = 65.0
 	p.initial_velocity_min = 2.2           # 提速：新生水珠立刻飞出，没有中心团
