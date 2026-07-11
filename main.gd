@@ -397,8 +397,8 @@ uniform vec2 light_uv = vec2(0.5, 0.5);      // 水晶屏幕位置（光心）
 uniform float density = 0.7;
 uniform float decayf = 0.95;
 uniform float weight = 0.5;
-uniform float exposure = 0.55;
-uniform float threshold = 0.82;              // 抬高：只有水晶高光出神光，哑光灰尘不出
+uniform float exposure = 0.6;
+uniform float threshold = 0.72;              // 亮部阈值（用最大通道，蓝水晶也算亮）
 
 const int SAMPLES = 32;
 
@@ -411,7 +411,8 @@ void fragment() {
 	for (int i = 0; i < SAMPLES; i++) {
 		samp -= delta;                       // 朝光心步进
 		vec3 s = texture(screen_tex, samp).rgb;
-		float b = max(0.0, dot(s, vec3(0.299, 0.587, 0.114)) - threshold);
+		float bright = max(s.r, max(s.g, s.b));   // 最大通道：蓝色也计入亮度
+		float b = max(0.0, bright - threshold);
 		col += s * b * illum * weight;
 		illum *= decayf;
 	}
@@ -438,14 +439,14 @@ shader_type spatial;
 render_mode blend_mix, cull_disabled, specular_schlick_ggx;
 
 uniform sampler2D wash_mask : filter_linear;
-uniform vec3 powder_color : source_color = vec3(0.40, 0.40, 0.42);
+uniform vec3 powder_color : source_color = vec3(0.34, 0.34, 0.36);
 uniform vec3 diamond_color : source_color = vec3(0.12, 0.42, 0.92);
 
 void fragment() {
 	float reveal = texture(wash_mask, UV).r;   // 冲刷遮罩：0=覆尘, 1=露出水晶
 	// 菲涅尔：边缘更实、正对更透，像水晶。
 	float fres = pow(1.0 - clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0), 3.0);
-	float crystal_alpha = mix(0.22, 0.85, fres);
+	float crystal_alpha = mix(0.32, 0.9, fres);
 	ALBEDO = mix(powder_color, diamond_color, reveal);
 	ROUGHNESS = mix(1.0, 0.02, reveal);        // 灰尘纯漫反射 → 水晶镜面光滑
 	METALLIC = mix(0.0, 0.3, reveal);
@@ -458,7 +459,7 @@ void fragment() {
 	env += pow(max(dot(rw, normalize(vec3(0.8, 0.7, 0.4))), 0.0), 50.0); // 亮斑 1
 	env += pow(max(dot(rw, normalize(vec3(-0.7, 0.5, 0.6))), 0.0), 70.0);// 亮斑 2
 	float fres2 = pow(1.0 - clamp(dot(fn2, normalize(VIEW)), 0.0, 1.0), 4.0);
-	EMISSION = diamond_color * (0.25 * reveal) + diamond_color * env * (0.7 + 1.4 * fres2) * reveal;
+	EMISSION = diamond_color * (0.55 * reveal) + diamond_color * env * (0.7 + 1.4 * fres2) * reveal;
 	ALPHA = mix(1.0, crystal_alpha, reveal);    // 灰尘不透明 → 冲刷露出后透明
 }
 """
