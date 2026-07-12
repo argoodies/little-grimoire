@@ -681,6 +681,7 @@ func _set_washing(on: bool, pos: Vector2) -> void:
 		var c := _droplet_mat.albedo_color
 		c.a = DROP_ALPHA                    # 恢复满透明度
 		_droplet_mat.albedo_color = c
+		_spray_fx.restart()                # 清掉上次残留(淡透明但未死)的水珠，避免第二下"突然一堆"
 	elif not on and _washing:
 		_washing = false
 		_sfx_water.stop()
