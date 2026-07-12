@@ -481,7 +481,7 @@ uniform vec2 light_uv = vec2(0.5, 0.5);      // 水晶屏幕位置（光心）
 uniform float density = 0.7;
 uniform float decayf = 0.95;
 uniform float weight = 0.5;
-uniform float exposure = 0.5;
+uniform float exposure = 1.0;
 uniform float threshold = 0.72;              // 亮部阈值（用最大通道，蓝水晶也算亮）
 
 const int SAMPLES = 32;
