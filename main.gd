@@ -6,8 +6,8 @@ extends Node3D
 
 const TARGET_W := 3.6                    # 模型最长边世界尺寸（放大 2 倍）
 const ROT_SENS := 0.006
-const MIN_ZOOM := 4.6                     # 最近：水晶约占屏宽 80%
-const MAX_ZOOM := 14.8                    # 最远：水晶约占屏宽 25%
+const MIN_ZOOM := 3.08                    # 最近：水晶约占屏宽 120%
+const MAX_ZOOM := 10.85                   # 最远：水晶约占屏宽 34%
 const SAVE_MASK := "user://wipe_mask.png"    # 擦拭进度遮罩
 const SAVE_STATE := "user://wipe_state.json" # 按钮态/交付/日夜
 const MSZ := 1024                        # 冲刷遮罩纹理尺寸（更高→边缘更细腻）
