@@ -6,8 +6,8 @@ extends Node3D
 
 const TARGET_W := 3.6                    # 模型最长边世界尺寸（放大 2 倍）
 const ROT_SENS := 0.006
-const MIN_ZOOM := 2.0
-const MAX_ZOOM := 8.0
+const MIN_ZOOM := 4.6                     # 最近：水晶约占屏宽 80%
+const MAX_ZOOM := 14.8                    # 最远：水晶约占屏宽 25%
 const SAVE_MASK := "user://wipe_mask.png"    # 擦拭进度遮罩
 const SAVE_STATE := "user://wipe_state.json" # 按钮态/交付/日夜
 const MSZ := 1024                        # 冲刷遮罩纹理尺寸（更高→边缘更细腻）
@@ -176,8 +176,9 @@ func _build_environment() -> void:
 func _build_camera() -> void:
 	_camera = Camera3D.new()
 	_camera.fov = 52.0
+	_camera.keep_aspect = Camera3D.KEEP_WIDTH   # 以屏幕宽度为基准，缩放按宽度占比稳定
 	add_child(_camera)
-	_camera.position = Vector3(0.0, 0.25, 3.6)
+	_camera.position = Vector3(0.0, 0.5, 7.36)  # 距离≈7.38：水晶约占屏宽 50%
 	_camera.look_at(Vector3.ZERO, Vector3.UP)
 	_camera.current = true
 
