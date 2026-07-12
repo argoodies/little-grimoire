@@ -4,7 +4,7 @@ extends Node3D
 ## 冲刷用模型局部空间的“冲刷点”做遮罩：冲刷点附近由白粉过渡为钻石。
 ## 单指=冲刷；双指=缩放+旋转视角。保留日/夜灯光。iOS 与 Web 同一套代码。
 
-const TARGET_W := 1.8                    # 模型最长边世界尺寸
+const TARGET_W := 3.6                    # 模型最长边世界尺寸（放大 2 倍）
 const ROT_SENS := 0.006
 const MIN_ZOOM := 2.0
 const MAX_ZOOM := 8.0
