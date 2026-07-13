@@ -462,6 +462,21 @@ func _enter_delivered() -> void:
 	_save_state()
 
 # 刷新/重新开始：重置覆尘态并旋转 4 周。
+# 选下一个模型：优先没解锁过的(逐个凑齐画廊)，全解锁后随机但尽量不与当前重复。
+func _next_model() -> String:
+	var locked: Array = []
+	for m in MODELS:
+		if not _unlocked.has(m):
+			locked.append(m)
+	if not locked.is_empty():
+		return locked[randi() % locked.size()]
+	if MODELS.size() > 1:
+		var p: String = _model_path
+		while p == _model_path:
+			p = MODELS[randi() % MODELS.size()]
+		return p
+	return MODELS[randi() % MODELS.size()]
+
 func _restart() -> void:
 	_btn_state = ST_REFRESH
 	_delivered = false
@@ -469,7 +484,7 @@ func _restart() -> void:
 	if _map_btn != null:
 		_map_btn.visible = false                    # 非交付态隐藏地图按钮
 	_sfx_whoosh.play()                              # 刷新音效（配合旋转）
-	_model_path = MODELS[randi() % MODELS.size()]   # 随机换模型
+	_model_path = _next_model()                     # 优先换未解锁的模型
 	_mask_img = Image.create(MSZ, MSZ, false, Image.FORMAT_L8)
 	_build_model(_model_path)
 	_seed_dust()
