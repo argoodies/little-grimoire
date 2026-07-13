@@ -68,11 +68,15 @@ var _toggle_btn: Button
 const PAGE_DX := 8.0                          # 相邻两页在世界里的横向间距（大于屏宽，邻页在屏外）
 var _map_btn: Button
 var _in_gallery := false
-var _gallery_root: Node3D                     # 画廊根，挂当前页模型
-var _gal_cur: Node3D                          # 当前居中的页
-var _gal_page := 0
-var _gal_anim := false                        # 翻页动画锁
-var _gal_sx := 0.0                            # 触摸起点 x
+var _gallery_root: Node3D                     # 画廊根
+var _gal_holders: Array = []                  # 每关一个 holder（环形排布）
+var _gal_page := 0                            # 当前居中关
+var _gal_scroll := 0.0                        # 连续滚动位置（世界单位，=应居中的世界 x）
+var _gal_target := 0.0                        # 吸附目标
+var _gal_vel := 0.0                           # 松手惯性
+var _gal_dragging := false
+var _gal_sx := 0.0                            # 触摸起点 x（像素）
+var _gal_s0 := 0.0                            # 拖拽起点的 scroll
 var _gal_moved := false
 var _cam_saved := Transform3D.IDENTITY
 var _unlocked: Array = []                    # 解锁过(擦净交付)的模型 path
@@ -253,7 +257,7 @@ func _build_toggle() -> void:
 	_map_btn.anchor_right = 1.0
 	_map_btn.icon = load("res://textures/icon_map.png")
 	_map_btn.expand_icon = true
-	_map_btn.visible = false
+	_map_btn.visible = true                          # 常驻
 	_map_btn.pressed.connect(_toggle_gallery)
 	layer.add_child(_map_btn)
 
@@ -483,8 +487,6 @@ func _restart() -> void:
 	_btn_state = ST_REFRESH
 	_delivered = false
 	_refresh_btn.icon = load("res://textures/icon_refresh.png")
-	if _map_btn != null:
-		_map_btn.visible = false                    # 非交付态隐藏地图按钮
 	_sfx_whoosh.play()                              # 刷新音效（配合旋转）
 	_model_path = _next_model()                     # 优先换未解锁的模型
 	_mask_img = Image.create(MSZ, MSZ, false, Image.FORMAT_L8)
@@ -641,17 +643,22 @@ func _open_gallery() -> void:
 		_gallery_root.queue_free()
 	_gallery_root = Node3D.new()
 	add_child(_gallery_root)
+	_gal_holders.clear()
+	for i in MODELS.size():
+		_gal_holders.append(_gal_make_page(i))
 	_gal_page = clampi(_gal_page, 0, MODELS.size() - 1)
-	_gal_cur = _gal_make_page(_gal_page)
-	_gal_cur.position = Vector3.ZERO
-	_gal_anim = false
+	_gal_scroll = float(_gal_page) * PAGE_DX
+	_gal_target = _gal_scroll
+	_gal_vel = 0.0
+	_gal_dragging = false
+	_gal_layout()
 
 func _close_gallery() -> void:
 	_in_gallery = false
 	if _gallery_root != null and is_instance_valid(_gallery_root):
 		_gallery_root.queue_free()
 		_gallery_root = null
-	_gal_cur = null
+	_gal_holders.clear()
 	_world.visible = true
 	_spray_fx.visible = true
 	_toggle_btn.visible = true
@@ -659,7 +666,7 @@ func _close_gallery() -> void:
 	_camera.transform = _cam_saved
 	_touches.clear()
 
-# 造一页：该关模型 + 双趟材质(洗净=全露/未洗=全覆尘) + 内部光源。居中在原点。
+# 造一页：该关模型 + 双趟材质(洗净=全露/未洗=全覆尘) + 内部光源。
 func _gal_make_page(page: int) -> Node3D:
 	var holder := Node3D.new()
 	_gallery_root.add_child(holder)
@@ -694,25 +701,42 @@ func _gal_make_page(page: int) -> Node3D:
 	holder.add_child(lt)
 	return holder
 
-# 翻页：dir=+1 下一关(从右滑入)，dir=-1 上一关(从左滑入)，循环。
-func _gal_goto(dir: int) -> void:
-	if _gal_anim or _gallery_root == null or MODELS.size() <= 1:
+# 环形排布：每个 holder 取离视线中心最近的那份副本，实现无限循环。
+func _gal_layout() -> void:
+	var n := _gal_holders.size()
+	if n == 0:
 		return
-	_gal_anim = true
-	_sfx_whoosh.play()
-	var next_page := (_gal_page + dir + MODELS.size()) % MODELS.size()
-	var incoming := _gal_make_page(next_page)
-	incoming.position = Vector3(float(dir) * PAGE_DX, 0.0, 0.0)   # 从屏外一侧进入
-	var outgoing := _gal_cur
-	var tw := create_tween().set_parallel(true).set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	tw.tween_property(incoming, "position", Vector3.ZERO, 0.35)
-	tw.tween_property(outgoing, "position", Vector3(float(-dir) * PAGE_DX, 0.0, 0.0), 0.35)
-	tw.chain().tween_callback(func():
-		if is_instance_valid(outgoing):
-			outgoing.queue_free()
-		_gal_cur = incoming
-		_gal_page = next_page
-		_gal_anim = false)
+	var period := float(n) * PAGE_DX
+	for i in n:
+		var h: Node3D = _gal_holders[i]
+		if not is_instance_valid(h):
+			continue
+		var d: float = float(i) * PAGE_DX - _gal_scroll
+		d = fposmod(d + period * 0.5, period) - period * 0.5   # 折到 [-P/2, P/2)
+		h.position = Vector3(d, 0.0, 0.0)
+		h.visible = absf(d) < PAGE_DX * 0.75                   # 只显示屏内那页附近
+	_gal_page = int(round(_gal_scroll / PAGE_DX)) % n
+	_gal_page = (_gal_page + n) % n
+
+# 每帧推进滚动：拖拽时跟手，松手后带惯性吸附到最近页。
+func _gal_step(delta: float) -> void:
+	if _gal_dragging:
+		_gal_layout()
+		return
+	if MODELS.size() <= 1:
+		_gal_layout()
+		return
+	# 惯性 + 弹性吸附到最近页
+	_gal_target = round((_gal_scroll - _gal_vel * 0.12) / PAGE_DX) * PAGE_DX
+	var k := 14.0                                # 弹性刚度
+	var damp := 0.82                             # 阻尼
+	var acc: float = (_gal_target - _gal_scroll) * k
+	_gal_vel = (_gal_vel + acc * delta) * damp
+	_gal_scroll += _gal_vel * delta
+	if absf(_gal_target - _gal_scroll) < 0.002 and absf(_gal_vel) < 0.01:
+		_gal_scroll = _gal_target
+		_gal_vel = 0.0
+	_gal_layout()
 
 # 选定当前关：关闭画廊，载入该模型从头擦拭。
 func _pick_level(i: int) -> void:
@@ -721,29 +745,42 @@ func _pick_level(i: int) -> void:
 	_btn_state = ST_REFRESH
 	_delivered = false
 	_refresh_btn.icon = load("res://textures/icon_refresh.png")
-	if _map_btn != null:
-		_map_btn.visible = false                    # 新关未交付，隐藏地图入口
 	_model_path = MODELS[i]
 	_mask_img = Image.create(MSZ, MSZ, false, Image.FORMAT_L8)
 	_build_model(_model_path)
 	_seed_dust()
 	_save_state()
 
-# 画廊内触摸：横向滑动翻页；轻点(几乎没移动)进入当前关。
+# 屏幕像素 → 世界横向位移（让模型基本跟手）。
+func _gal_px_to_world(px: float) -> float:
+	var vp := get_viewport().get_visible_rect().size
+	if vp.x < 1.0:
+		return 0.0
+	var world_w := 2.0 * 7.36 * tan(deg_to_rad(26.0))   # z=7.36 处可见世界宽（fov52/KEEP_WIDTH）
+	return px / vp.x * world_w
+
+# 画廊内触摸：拖拽跟手滚动；轻点(几乎没移动)进入当前关。
 func _gallery_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch or event is InputEventMouseButton:
 		if event.pressed:
+			_gal_dragging = true
 			_gal_sx = event.position.x
+			_gal_s0 = _gal_scroll
+			_gal_vel = 0.0
 			_gal_moved = false
 		else:
-			var dx: float = event.position.x - _gal_sx
-			if absf(dx) > 80.0:
-				_gal_goto(1 if dx < 0.0 else -1)   # 左滑→下一关
-			elif not _gal_moved:
+			_gal_dragging = false
+			if not _gal_moved:
 				_pick_level(_gal_page)             # 轻点进入当前关
 	elif event is InputEventScreenDrag or event is InputEventMouseMotion:
-		if absf(event.position.x - _gal_sx) > 12.0:
-			_gal_moved = true
+		if _gal_dragging:
+			var dx: float = event.position.x - _gal_sx
+			if absf(dx) > 10.0:
+				_gal_moved = true
+			var prev := _gal_scroll
+			_gal_scroll = _gal_s0 - _gal_px_to_world(dx)   # 右滑→上一关
+			_gal_vel = (_gal_scroll - prev) / maxf(get_process_delta_time(), 0.0001)
+			_gal_layout()
 
 # 灰尘层：不透明、写深度、剔除背面 —— 覆尘处实心不穿模；露出处丢弃交给水晶层。
 func _make_dust_shader() -> Shader:
@@ -832,7 +869,8 @@ func _spray(screen_pos: Vector2) -> void:
 # ---------- 每帧 ----------
 
 func _process(delta: float) -> void:
-	if _in_gallery:                           # 画廊：只更新神光光心到中心模型
+	if _in_gallery:                           # 画廊：推进丝滑滚动 + 神光光心
+		_gal_step(delta)
 		if _godray_mat != null:
 			var gvp := get_viewport().get_visible_rect().size
 			if gvp.x > 0.0 and gvp.y > 0.0:
