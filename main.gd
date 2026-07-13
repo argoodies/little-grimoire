@@ -743,14 +743,22 @@ func _open_gallery() -> void:
 	_gallery_root = Node3D.new()
 	add_child(_gallery_root)
 	_gal_holders.clear()
-	for i in MODELS.size():
-		_gal_holders.append(_gal_make_page(i))
+	_gal_holders.resize(MODELS.size())            # 懒加载：先全 null，用到才建
 	_gal_page = clampi(_gal_page, 0, MODELS.size() - 1)
 	_gal_scroll = float(_gal_page) * PAGE_DX
 	_gal_dragging = false
 	_gal_prev_page = -1                           # 让开场首页也触发入场旋转
+	_gal_ensure(_gal_page)                        # 只建当前页
 	_gal_layout()
 	_build_gal_buttons()
+
+# 懒加载：需要某页时才实例化它的模型。
+func _gal_ensure(page: int) -> void:
+	if page < 0 or page >= _gal_holders.size():
+		return
+	var h = _gal_holders[page]
+	if h == null or not is_instance_valid(h):
+		_gal_holders[page] = _gal_make_page(page)
 
 func _close_gallery() -> void:
 	_in_gallery = false
@@ -827,6 +835,7 @@ func _gal_layout() -> void:
 	_gal_page = (_gal_page + n) % n
 	if _gal_page != _gal_prev_page:                            # 换到新一页 → 入场旋转
 		_gal_prev_page = _gal_page
+		_gal_ensure(_gal_page)                                # 懒加载兜底
 		_gal_spin(_gal_holders[_gal_page])
 
 # 入场旋转：绕随机轴转 4 整圈 + 随机多转 0~180°（复用初始 spin 手感）。
@@ -894,8 +903,10 @@ func _gal_goto(dir: int) -> void:
 	if _gal_tw != null and _gal_tw.is_valid():
 		_gal_tw.kill()
 	_sfx_click.play()
+	var n := MODELS.size()
 	var slot: float = round(_gal_scroll / PAGE_DX) + float(dir)
 	var target: float = slot * PAGE_DX
+	_gal_ensure(((int(slot) % n) + n) % n)          # 提前建好即将滑入的那页
 	_gal_tw = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 	_gal_tw.tween_property(self, "_gal_scroll", target, 0.4)
 
