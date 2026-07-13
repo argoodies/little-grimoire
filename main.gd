@@ -34,6 +34,7 @@ const ST_REFRESH := 0                       # 右上角按钮状态：刷新
 const ST_CIRCLE := 1                        # 可交付：圆圈
 const ST_DELIVERED := 2                     # 已交付：对勾
 var _btn_state := ST_REFRESH
+var _deliver_lock := false                  # 交付对勾后 1 秒锁定（不可点）
 var _delivered := false                     # 已交付：禁冲刷，只旋转
 var _cov_tick := 0                          # 覆盖率检测节流
 
@@ -144,7 +145,7 @@ func _apply_loaded_ui() -> void:
 	if _btn_state == ST_CIRCLE:
 		_refresh_btn.icon = load("res://textures/icon_circle.png")
 	elif _btn_state == ST_DELIVERED:
-		_refresh_btn.icon = load("res://textures/icon_check.png")
+		_refresh_btn.icon = load("res://textures/icon_refresh.png")   # 交付态静息显示刷新
 		if _map_btn != null:
 			_map_btn.visible = true
 	if _night:
@@ -446,6 +447,8 @@ func _on_topbtn() -> void:
 		ST_CIRCLE:
 			_enter_delivered()
 		ST_DELIVERED:
+			if _deliver_lock:                   # 对勾期间不可点
+				return
 			_restart()
 
 # 冲刷达 99% → 进入“可交付”态：按钮变圆圈（仍可继续擦拭）。
@@ -468,6 +471,12 @@ func _enter_delivered() -> void:
 	if _map_btn != null:
 		_map_btn.visible = true                 # 打勾后显示地图按钮
 	_save_state()
+	# 对勾锁定 1 秒不可点，随后变回刷新按钮（仍是交付态：点击=重开一局）。
+	_deliver_lock = true
+	get_tree().create_timer(1.0).timeout.connect(func():
+		_deliver_lock = false
+		if _btn_state == ST_DELIVERED:
+			_refresh_btn.icon = load("res://textures/icon_refresh.png"))
 
 # 刷新/重新开始：重置覆尘态并旋转 4 周。
 # 选下一个模型：优先没解锁过的(逐个凑齐画廊)，全解锁后随机但尽量不与当前重复。
