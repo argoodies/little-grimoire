@@ -628,39 +628,29 @@ func _open_gallery() -> void:
 	_gal_layer.layer = 10
 	add_child(_gal_layer)
 
-	# 半透明深色背景，吃掉所有点击（不穿透到水晶）。
+	# 半透明深色背景，吃掉点击；点空白处返回。
 	var bg := ColorRect.new()
 	bg.color = Color(0.03, 0.04, 0.07, 0.96)
 	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
 	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	bg.gui_input.connect(func(e):
+		if (e is InputEventMouseButton and e.pressed) or (e is InputEventScreenTouch and e.pressed):
+			_toggle_gallery())
 	_gal_layer.add_child(bg)
 
-	var title := Label.new()
-	title.text = "选择关卡"
-	title.add_theme_font_size_override("font_size", 72)
-	title.add_theme_color_override("font_color", Color(0.85, 0.9, 1.0))
-	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-	title.set_anchors_preset(Control.PRESET_CENTER_TOP)
-	title.anchor_left = 0.0
-	title.anchor_right = 1.0
-	title.offset_top = 140.0
-	_gal_layer.add_child(title)
-
-	# 关卡拼图图标横向居中排列。
+	# 关卡拼图图标横向居中排列，每块上放数字 1-n。
 	var grid := HBoxContainer.new()
 	grid.add_theme_constant_override("separation", 60)
 	grid.alignment = BoxContainer.ALIGNMENT_CENTER
 	grid.set_anchors_preset(Control.PRESET_CENTER)
 	grid.anchor_left = 0.0
 	grid.anchor_right = 1.0
-	grid.offset_top = -140.0
+	grid.offset_top = -110.0
+	grid.offset_bottom = 110.0
 	_gal_layer.add_child(grid)
 
 	var tile := load("res://textures/puzzle_tile.png")
 	for i in MODELS.size():
-		var col := VBoxContainer.new()
-		col.alignment = BoxContainer.ALIGNMENT_CENTER
-		grid.add_child(col)
 		var b := TextureButton.new()
 		b.texture_normal = tile
 		b.ignore_texture_size = true
@@ -671,28 +661,17 @@ func _open_gallery() -> void:
 		b.self_modulate = Color(0.35, 0.62, 1.0) if done else Color(0.42, 0.44, 0.5)
 		var idx := i
 		b.pressed.connect(func(): _pick_level(idx))
-		col.add_child(b)
-		var lab := Label.new()
-		lab.text = "第 %d 关" % (i + 1)
-		lab.add_theme_font_size_override("font_size", 44)
-		lab.add_theme_color_override("font_color", Color(0.8, 0.85, 0.95) if done else Color(0.55, 0.57, 0.63))
-		lab.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		lab.custom_minimum_size = Vector2(220, 0)
-		col.add_child(lab)
-
-	# 底部关闭按钮。
-	var close := Button.new()
-	close.flat = true
-	close.focus_mode = Control.FOCUS_NONE
-	close.text = "✕ 返回"
-	close.add_theme_font_size_override("font_size", 48)
-	close.add_theme_color_override("font_color", Color(0.7, 0.75, 0.85))
-	close.set_anchors_preset(Control.PRESET_CENTER_BOTTOM)
-	close.anchor_left = 0.0
-	close.anchor_right = 1.0
-	close.offset_top = -220.0
-	close.pressed.connect(_toggle_gallery)
-	_gal_layer.add_child(close)
+		grid.add_child(b)
+		# 数字覆盖在拼图中央。
+		var num := Label.new()
+		num.text = str(i + 1)
+		num.add_theme_font_size_override("font_size", 96)
+		num.add_theme_color_override("font_color", Color(0.06, 0.09, 0.16))
+		num.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		num.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		num.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		num.set_anchors_preset(Control.PRESET_FULL_RECT)
+		b.add_child(num)
 
 func _close_gallery() -> void:
 	_in_gallery = false
