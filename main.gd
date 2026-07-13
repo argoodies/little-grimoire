@@ -71,6 +71,7 @@ var _in_gallery := false
 var _gallery_root: Node3D                     # 画廊根
 var _gal_holders: Array = []                  # 每关一个 holder（环形排布）
 var _gal_page := 0                            # 当前居中关
+var _gal_prev_page := -1                       # 上次居中关（换页触发旋转）
 var _gal_scroll := 0.0                        # 连续滚动位置（世界单位，=应居中的世界 x）
 var _gal_target := 0.0                        # 吸附目标
 var _gal_vel := 0.0                           # 松手惯性
@@ -651,6 +652,7 @@ func _open_gallery() -> void:
 	_gal_target = _gal_scroll
 	_gal_vel = 0.0
 	_gal_dragging = false
+	_gal_prev_page = -1                           # 让开场首页也触发入场旋转
 	_gal_layout()
 
 func _close_gallery() -> void:
@@ -717,6 +719,26 @@ func _gal_layout() -> void:
 		h.visible = absf(d) < PAGE_DX * 0.75                   # 只显示屏内那页附近
 	_gal_page = int(round(_gal_scroll / PAGE_DX)) % n
 	_gal_page = (_gal_page + n) % n
+	if _gal_page != _gal_prev_page:                            # 换到新一页 → 入场旋转
+		_gal_prev_page = _gal_page
+		_gal_spin(_gal_holders[_gal_page])
+
+# 入场旋转：绕随机轴转 4 整圈 + 随机多转 0~180°（复用初始 spin 手感）。
+# 只改 basis（旋转），holder.position 仍由 _gal_layout 每帧掌控，互不干扰。
+func _gal_spin(holder: Node3D) -> void:
+	if not is_instance_valid(holder):
+		return
+	var axis := Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), randf_range(-1.0, 1.0))
+	if axis.length() < 0.01:
+		axis = Vector3.UP
+	axis = axis.normalized()
+	var extra := randf_range(0.0, PI)
+	var tw := create_tween().set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
+	tw.tween_method(
+		func(a: float):
+			if is_instance_valid(holder):
+				holder.basis = Basis(axis, a),
+		0.0, TAU * 4.0 + extra, 1.9)
 
 # 每帧推进滚动：拖拽时跟手，松手后带惯性吸附到最近页。
 func _gal_step(delta: float) -> void:
