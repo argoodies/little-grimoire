@@ -638,7 +638,8 @@ func _open_gallery() -> void:
 	_spray_fx.emitting = false
 	_spray_fx.visible = false
 	_toggle_btn.visible = false
-	_refresh_btn.visible = false                 # 地图按钮保留(作返回)
+	_refresh_btn.visible = false
+	_map_btn.visible = false                     # 画廊页不显示地图按钮，改用画廊内返回按钮
 	_cam_saved = _camera.transform
 	_camera.transform = Transform3D(Basis.IDENTITY, Vector3(0.0, 0.5, 7.36))
 	if _gallery_root != null and is_instance_valid(_gallery_root):
@@ -668,6 +669,7 @@ func _close_gallery() -> void:
 	_spray_fx.visible = true
 	_toggle_btn.visible = true
 	_refresh_btn.visible = true
+	_map_btn.visible = true                       # 回到主游戏，地图按钮常驻
 	_camera.transform = _cam_saved
 	_touches.clear()
 
@@ -760,6 +762,26 @@ func _build_gal_buttons() -> void:
 	rb.pressed.connect(func(): _gal_goto(1))
 	_gal_ui.add_child(lb)
 	_gal_ui.add_child(rb)
+	# 返回按钮（右上角，退出画廊回主游戏）。
+	var cb := TextureButton.new()
+	cb.texture_normal = load("res://textures/icon_close.png")
+	cb.ignore_texture_size = true
+	cb.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+	cb.focus_mode = Control.FOCUS_NONE
+	cb.anchor_left = 1.0
+	cb.anchor_right = 1.0
+	var m := 40.0
+	var top := m
+	var vis := get_viewport().get_visible_rect().size
+	var win := Vector2(DisplayServer.window_get_size())
+	if win.x > 1.0 and win.y > 1.0:
+		top = DisplayServer.get_display_safe_area().position.y * (vis.y / win.y) + m
+	cb.offset_left = -m - 110.0
+	cb.offset_right = -m
+	cb.offset_top = top
+	cb.offset_bottom = top + 110.0
+	cb.pressed.connect(_toggle_gallery)
+	_gal_ui.add_child(cb)
 
 func _make_arrow(path: String, right: bool) -> TextureButton:
 	var b := TextureButton.new()
@@ -767,20 +789,20 @@ func _make_arrow(path: String, right: bool) -> TextureButton:
 	b.ignore_texture_size = true
 	b.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
 	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(150, 150)
-	b.size = Vector2(150, 150)
+	b.custom_minimum_size = Vector2(120, 120)
+	b.size = Vector2(120, 120)
 	b.anchor_top = 0.5
 	b.anchor_bottom = 0.5
-	b.offset_top = -75.0
-	b.offset_bottom = 75.0
+	b.offset_top = -60.0
+	b.offset_bottom = 60.0
 	if right:
 		b.anchor_left = 1.0
 		b.anchor_right = 1.0
-		b.offset_left = -190.0
-		b.offset_right = -40.0
+		b.offset_left = -150.0
+		b.offset_right = -30.0
 	else:
-		b.offset_left = 40.0
-		b.offset_right = 190.0
+		b.offset_left = 30.0
+		b.offset_right = 150.0
 	return b
 
 # 按钮翻页：dir=+1 下一关 / -1 上一关，缓动补间平滑滑过一页（循环）。
