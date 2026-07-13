@@ -103,7 +103,8 @@ func _ready() -> void:
 	_build_godrays()
 	_build_toggle()
 	_apply_loaded_ui()                        # 恢复存档的按钮态/日夜
-	_spin4()                                  # 初始也旋转 4 周
+	if _btn_state != ST_DELIVERED:            # 交付态不做入场旋转
+		_spin4()
 
 # ---------- 存档 ----------
 
@@ -844,13 +845,14 @@ func _pick_level(i: int) -> void:
 		_delivered = true
 		_build_model(_model_path)
 		_show_delivered_button()                     # 对勾 1 秒 → 刷新
+		# 交付态不做入场旋转
 	else:
 		_btn_state = ST_REFRESH
 		_delivered = false
 		_refresh_btn.icon = load("res://textures/icon_refresh.png")
 		_build_model(_model_path)
 		_seed_dust()
-	_spin4()
+		_spin4()
 	_save_state()
 
 # 画廊内触摸：拖拽旋转当前模型（翻页交给左右按钮）；轻点进入当前关。
