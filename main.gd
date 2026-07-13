@@ -932,8 +932,8 @@ func _gallery_input(event: InputEvent) -> void:
 				_gal_rot = h.rotation          # 从当前朝向接管，避免跳变
 		else:
 			_gal_dragging = false
-			if not _gal_moved:
-				_pick_level(_gal_page)         # 轻点进入当前关
+			if not _gal_moved and _gal_tap_hits(event.position):
+				_pick_level(_gal_page)         # 轻点命中水晶才进入（点背景不进）
 	elif event is InputEventScreenDrag or event is InputEventMouseMotion:
 		if _gal_dragging:
 			var rel: Vector2 = event.relative if event is InputEventScreenDrag else (event as InputEventMouseMotion).relative
@@ -941,6 +941,22 @@ func _gallery_input(event: InputEvent) -> void:
 				_gal_moved = true
 			_gal_rot.x -= rel.y * ROT_SENS     # 只更新目标，惯性由 _process 每帧 lerp 追随
 			_gal_rot.y += rel.x * ROT_SENS
+
+# 点击是否命中当前居中的水晶（相机射线 vs 模型包围球），点黑背景则不命中。
+func _gal_tap_hits(pos: Vector2) -> bool:
+	if _gal_page >= _gal_holders.size():
+		return false
+	var h: Node3D = _gal_holders[_gal_page]
+	if not is_instance_valid(h):
+		return false
+	var from := _camera.project_ray_origin(pos)
+	var dir := _camera.project_ray_normal(pos)
+	var c := h.global_position
+	var t: float = (c - from).dot(dir)
+	if t < 0.0:
+		return false
+	var closest := from + dir * t
+	return closest.distance_to(c) < TARGET_W * 0.6
 
 # 灰尘层：不透明、写深度、剔除背面 —— 覆尘处实心不穿模；露出处丢弃交给水晶层。
 func _make_dust_shader() -> Shader:
