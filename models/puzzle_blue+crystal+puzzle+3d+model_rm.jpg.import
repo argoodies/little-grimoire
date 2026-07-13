@@ -2,19 +2,19 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://r0684ef0kwym"
-path="res://.godot/imported/puzzle2_blue+crystal+puzzle+piece+3d+model_rm.jpg-5be76a9a45353cc060414f291ba78104.ctex"
+uid="uid://cl70v3av05ueg"
+path="res://.godot/imported/puzzle_blue+crystal+puzzle+3d+model_rm.jpg-c52365a31f5f952800f2df40e54e4dac.ctex"
 metadata={
 "vram_texture": false
 }
 generator_parameters={
-"md5": "f0b718a176a572245abaff102164da53"
+"md5": "fd87ddec2ceac4a30135cbb73f4915c3"
 }
 
 [deps]
 
-source_file="res://models/puzzle2_blue+crystal+puzzle+piece+3d+model_rm.jpg"
-dest_files=["res://.godot/imported/puzzle2_blue+crystal+puzzle+piece+3d+model_rm.jpg-5be76a9a45353cc060414f291ba78104.ctex"]
+source_file="res://models/puzzle_blue+crystal+puzzle+3d+model_rm.jpg"
+dest_files=["res://.godot/imported/puzzle_blue+crystal+puzzle+3d+model_rm.jpg-c52365a31f5f952800f2df40e54e4dac.ctex"]
 
 [params]
 
