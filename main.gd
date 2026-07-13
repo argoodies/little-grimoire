@@ -103,7 +103,7 @@ func _ready() -> void:
 	_build_godrays()
 	_build_toggle()
 	_apply_loaded_ui()                        # 恢复存档的按钮态/日夜
-	_spin4(_btn_state != ST_DELIVERED)        # 交付态照样转模型，但右上按钮不转
+	_spin4()                                  # 入场旋转（模型 + 右上按钮一起转）
 
 # ---------- 存档 ----------
 
@@ -145,7 +145,7 @@ func _apply_loaded_ui() -> void:
 	if _btn_state == ST_CIRCLE:
 		_refresh_btn.icon = load("res://textures/icon_circle.png")
 	elif _btn_state == ST_DELIVERED:
-		_show_delivered_button()               # 对勾 1 秒 → 刷新
+		_refresh_btn.icon = load("res://textures/icon_refresh.png")   # 已交付静息：可点的刷新
 		if _map_btn != null:
 			_map_btn.visible = true
 	if _night:
@@ -842,16 +842,15 @@ func _pick_level(i: int) -> void:
 		_mask_img.fill(Color(1, 1, 1))               # 整颗洗净
 		_btn_state = ST_DELIVERED
 		_delivered = true
+		_refresh_btn.icon = load("res://textures/icon_refresh.png")   # 可点的刷新
 		_build_model(_model_path)
-		_show_delivered_button()                     # 对勾 1 秒 → 刷新
-		_spin4(false)                                # 转模型，但右上按钮不转
 	else:
 		_btn_state = ST_REFRESH
 		_delivered = false
 		_refresh_btn.icon = load("res://textures/icon_refresh.png")
 		_build_model(_model_path)
 		_seed_dust()
-		_spin4()
+	_spin4()                                         # 入场旋转（模型 + 按钮）
 	_save_state()
 
 # 画廊内触摸：拖拽旋转当前模型（翻页交给左右按钮）；轻点进入当前关。
