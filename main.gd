@@ -53,6 +53,7 @@ var _sfx_reward: AudioStreamPlayer
 var _sfx_ding: AudioStreamPlayer
 var _sfx_click: AudioStreamPlayer
 var _sfx_whoosh: AudioStreamPlayer
+var _sfx_enter: AudioStreamPlayer           # 换关/进关：迷团钟琴音
 var _godray_mat: ShaderMaterial
 var _spray_fx: CPUParticles3D             # 喷水水花粒子
 var _droplet_mat: StandardMaterial3D      # 水珠共享材质（松手时整体淡出）
@@ -185,6 +186,10 @@ func _build_audio() -> void:
 	_sfx_whoosh.stream = load("res://sounds/shroud.wav")
 	_sfx_whoosh.volume_db = 0.0
 	add_child(_sfx_whoosh)
+	_sfx_enter = AudioStreamPlayer.new()
+	_sfx_enter.stream = load("res://sounds/enter.wav")   # 换关/进关：迷团钟琴音
+	_sfx_enter.volume_db = 0.0
+	add_child(_sfx_enter)
 
 func _build_environment() -> void:
 	var we := WorldEnvironment.new()
@@ -608,7 +613,7 @@ func _enter_delivered() -> void:
 
 # ▶️ 播放：随机换一个水晶模型的未清洗态，重新开始擦拭。
 func _play_next() -> void:
-	_sfx_click.play()                               # 翻页/切换音（原旋转呼声已去掉）
+	_sfx_enter.play()                               # 换关：迷团钟琴音
 	_hide_bottom_ui()
 	_btn_state = ST_REFRESH
 	_delivered = false
@@ -924,7 +929,7 @@ func _gal_goto(dir: int) -> void:
 # 已完成(解锁)的关 → 进入完成态(整颗洗净 + 底部双按钮)；
 # 未完成的关 → 从头覆尘擦拭。
 func _pick_level(i: int) -> void:
-	_sfx_click.play()                               # 翻页/切换音
+	_sfx_enter.play()                               # 进关：迷团钟琴音
 	_close_gallery()
 	_model_path = MODELS[i]
 	_mask_img = Image.create(MSZ, MSZ, false, Image.FORMAT_L8)
