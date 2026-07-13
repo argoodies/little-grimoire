@@ -273,7 +273,8 @@ func _make_flat_btn(icon_path: String) -> Button:
 	return b
 
 func _apply_safe_area() -> void:
-	var btn := 140.0
+	var btn := 144.0                           # 左上日/夜按钮
+	var bbtn := 200.0                          # 底部一排按钮（更大）
 	var m := 40.0
 	var vis := get_viewport().get_visible_rect().size
 	var win := Vector2(DisplayServer.window_get_size())
@@ -292,28 +293,28 @@ func _apply_safe_area() -> void:
 	_toggle_btn.offset_top = top
 	_toggle_btn.offset_bottom = top + btn
 	# 底部中央按钮的竖直位置（靠近下方，但抬高一些）。
-	var yb := bottom + 200.0
-	var g := 70.0                              # 双按钮间距
+	var yb := bottom + 210.0
+	var g := 90.0                              # 双按钮间距
 	# 圆圈：水平居中
 	if _circle_btn != null:
 		_circle_btn.anchor_left = 0.5
 		_circle_btn.anchor_right = 0.5
 		_circle_btn.anchor_top = 1.0
 		_circle_btn.anchor_bottom = 1.0
-		_circle_btn.offset_left = -btn * 0.5
-		_circle_btn.offset_right = btn * 0.5
+		_circle_btn.offset_left = -bbtn * 0.5
+		_circle_btn.offset_right = bbtn * 0.5
 		_circle_btn.offset_bottom = -yb
-		_circle_btn.offset_top = -yb - btn
+		_circle_btn.offset_top = -yb - bbtn
 	# 画廊（居中偏左）
 	if _map_btn != null:
 		_map_btn.anchor_left = 0.5
 		_map_btn.anchor_right = 0.5
 		_map_btn.anchor_top = 1.0
 		_map_btn.anchor_bottom = 1.0
-		_map_btn.offset_left = -g * 0.5 - btn
+		_map_btn.offset_left = -g * 0.5 - bbtn
 		_map_btn.offset_right = -g * 0.5
 		_map_btn.offset_bottom = -yb
-		_map_btn.offset_top = -yb - btn
+		_map_btn.offset_top = -yb - bbtn
 	# 播放（居中偏右）
 	if _play_btn != null:
 		_play_btn.anchor_left = 0.5
@@ -321,9 +322,9 @@ func _apply_safe_area() -> void:
 		_play_btn.anchor_top = 1.0
 		_play_btn.anchor_bottom = 1.0
 		_play_btn.offset_left = g * 0.5
-		_play_btn.offset_right = g * 0.5 + btn
+		_play_btn.offset_right = g * 0.5 + bbtn
 		_play_btn.offset_bottom = -yb
-		_play_btn.offset_top = -yb - btn
+		_play_btn.offset_top = -yb - bbtn
 
 func _on_toggle() -> void:
 	_night = not _night
