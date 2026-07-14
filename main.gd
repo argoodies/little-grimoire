@@ -233,6 +233,7 @@ func _build_toggle() -> void:
 	_toggle_btn.text = "☀️"
 	_toggle_btn.pressed.connect(_on_toggle)
 	_wire_press(_toggle_btn)
+	_apply_glass(_toggle_btn)
 	layer.add_child(_toggle_btn)
 
 	# 底部中央：达标圆圈 / 交付对勾（同一个按钮切换图标）。
@@ -245,14 +246,35 @@ func _build_toggle() -> void:
 	_map_btn = _make_flat_btn("res://textures/icon_map.png")
 	_map_btn.pressed.connect(_toggle_gallery)
 	_map_btn.visible = false
+	_apply_glass(_map_btn)
 	layer.add_child(_map_btn)
 	_play_btn = _make_flat_btn("res://textures/icon_play.png")
 	_play_btn.pressed.connect(_play_next)
 	_play_btn.visible = false
+	_apply_glass(_play_btn)
 	layer.add_child(_play_btn)
 
 	_apply_safe_area()
 	get_viewport().size_changed.connect(_apply_safe_area)
+
+# 毛玻璃透镜底：半透明白 + 圆角 + 亮边 + 柔光，营造 2D 玻璃按钮质感。
+func _glass_style(pressed := false) -> StyleBoxFlat:
+	var sb := StyleBoxFlat.new()
+	sb.bg_color = Color(1.0, 1.0, 1.0, 0.18 if pressed else 0.12)
+	sb.set_corner_radius_all(44)
+	sb.set_border_width_all(2)
+	sb.border_color = Color(1.0, 1.0, 1.0, 0.30)
+	sb.shadow_color = Color(0.6, 0.8, 1.0, 0.18)   # 淡蓝柔光，像透镜
+	sb.shadow_size = 10
+	sb.set_content_margin_all(18.0)                # 图标内缩，四周留玻璃边
+	return sb
+
+func _apply_glass(b: Button) -> void:
+	b.flat = false
+	b.add_theme_stylebox_override("normal", _glass_style())
+	b.add_theme_stylebox_override("hover", _glass_style())
+	b.add_theme_stylebox_override("pressed", _glass_style(true))
+	b.add_theme_stylebox_override("focus", _glass_style())
 
 func _make_flat_btn(icon_path: String) -> Button:
 	var b := Button.new()
