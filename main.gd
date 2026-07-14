@@ -918,15 +918,15 @@ func _build_gal_buttons() -> void:
 	_gal_ui.add_child(lb)
 	_gal_ui.add_child(rb)
 
-func _make_arrow(path: String, right: bool) -> TextureButton:
-	var b := TextureButton.new()
-	b.texture_normal = load(path)
-	b.ignore_texture_size = true
-	b.stretch_mode = TextureButton.STRETCH_KEEP_ASPECT_CENTERED
+func _make_arrow(path: String, right: bool) -> Button:
+	var b := Button.new()
+	b.icon = load(path)
+	b.expand_icon = true
 	b.focus_mode = Control.FOCUS_NONE
 	b.custom_minimum_size = Vector2(120, 120)
 	b.size = Vector2(120, 120)
 	_wire_press(b)
+	_apply_glass(b)                          # 毛玻璃透镜底
 	b.anchor_top = 0.5
 	b.anchor_bottom = 0.5
 	b.offset_top = -60.0
