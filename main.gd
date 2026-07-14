@@ -35,7 +35,8 @@ const ST_CIRCLE := 1                        # 可交付：圆圈
 const ST_DELIVERED := 2                     # 已交付：对勾
 var _btn_state := ST_REFRESH
 var _deliver_lock := false                  # 交付对勾后 1 秒锁定（不可点）
-var _intro_btns := false                     # 覆尘关卡开局：右上先显示画廊+播放，首次擦拭/旋转后淡出
+var _intro_btns := false                     # 覆尘关卡：右上画廊+播放当前是否显示（开局显示，操作后淡出，闲置回归）
+var _idle_time := 0.0                         # 覆尘态无擦拭/旋转的累计秒数（≥3s 让右上按钮重新出现）
 var _delivered := false                     # 已交付：禁冲刷，只旋转
 var _cov_tick := 0                          # 覆盖率检测节流
 
@@ -1112,6 +1113,14 @@ func _process(delta: float) -> void:
 	if _spray_fx.emitting != want_emit:
 		_spray_fx.emitting = want_emit
 	_moved = false                            # 每帧消费，无余量
+	# 覆尘擦拭态：擦拭中清零；否则累计闲置，满 3s 让右上按钮重新淡入。
+	if _btn_state == ST_REFRESH and not _delivered:
+		if _washing:
+			_idle_time = 0.0
+		elif not _intro_btns:
+			_idle_time += delta
+			if _idle_time >= 3.0:
+				_show_intro_btns()
 	var target := _manual_rot
 	var weight := 1.0 - pow(0.002, delta)
 	_world.rotation = _world.rotation.lerp(target, weight)
@@ -1127,7 +1136,8 @@ func _process(delta: float) -> void:
 func _set_washing(on: bool, pos: Vector2) -> void:
 	if on and not _washing:
 		_washing = true
-		_fade_out_intro_btns()             # 首次擦拭 → 开局按钮淡出
+		_idle_time = 0.0
+		_fade_out_intro_btns()             # 首次擦拭 → 右上按钮淡出
 		_wash_screen = pos
 		_spray(pos)                        # 先把发射点移到当前触点，否则 restart 会在上次松手位置喷出残留水珠
 		if _fade_tween != null and _fade_tween.is_valid():
@@ -1213,8 +1223,10 @@ func _unhandled_input(event: InputEvent) -> void:
 			_rotate_by(event.relative)
 
 func _rotate_by(delta: Vector2) -> void:
-	if _intro_btns and delta.length() > 1.0:   # 首次旋转 → 开局按钮淡出
-		_fade_out_intro_btns()
+	if delta.length() > 1.0:
+		_idle_time = 0.0                       # 旋转即活跃，重置闲置计时
+		if _intro_btns:                        # 旋转 → 右上按钮淡出
+			_fade_out_intro_btns()
 	_manual_rot.x -= delta.y * ROT_SENS
 	_manual_rot.y += delta.x * ROT_SENS
 
