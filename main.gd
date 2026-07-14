@@ -35,6 +35,7 @@ const ST_CIRCLE := 1                        # 可交付：圆圈
 const ST_DELIVERED := 2                     # 已交付：对勾
 var _btn_state := ST_REFRESH
 var _deliver_lock := false                  # 交付对勾后 1 秒锁定（不可点）
+var _intro_btns := false                     # 覆尘关卡开局：右上先显示画廊+播放，首次擦拭/旋转后淡出
 var _delivered := false                     # 已交付：禁冲刷，只旋转
 var _cov_tick := 0                          # 覆盖率检测节流
 
@@ -135,12 +136,12 @@ func _apply_bottom_state() -> void:
 func _load_random_level() -> void:
 	_btn_state = ST_REFRESH
 	_delivered = false
-	_hide_bottom_ui()
 	_model_path = MODELS[randi() % MODELS.size()]
 	_mask_img = Image.create(MSZ, MSZ, false, Image.FORMAT_L8)
 	_build_model(_model_path)
 	_seed_dust()
 	_spin4()
+	_show_intro_btns()                          # 开局右上先亮画廊+播放，首次擦拭/旋转后淡出
 	_save_state()
 
 func _notification(what: int) -> void:
@@ -557,6 +558,23 @@ func _reveal_dual(animate: bool) -> void:
 		tw.tween_property(_map_btn, "modulate:a", 1.0, 0.4)
 		tw.tween_property(_play_btn, "modulate:a", 1.0, 0.4)
 
+# 覆尘关卡开局：右上先淡入画廊+播放（作快捷入口），标记为"待首次操作淡出"。
+func _show_intro_btns() -> void:
+	_reveal_dual(true)
+	_intro_btns = true
+
+# 首次擦拭/旋转 → 让开局的画廊+播放淡出隐藏。
+func _fade_out_intro_btns() -> void:
+	if not _intro_btns:
+		return
+	_intro_btns = false
+	var tw := create_tween().set_parallel(true)
+	tw.tween_property(_map_btn, "modulate:a", 0.0, 0.4)
+	tw.tween_property(_play_btn, "modulate:a", 0.0, 0.4)
+	tw.chain().tween_callback(func():
+		if _map_btn != null: _map_btn.visible = false
+		if _play_btn != null: _play_btn.visible = false)
+
 # 冲刷达标 → 底部中央淡入圆圈（仍可继续擦拭）。
 func _enter_circle() -> void:
 	_btn_state = ST_CIRCLE
@@ -932,7 +950,7 @@ func _pick_level(i: int) -> void:
 		_delivered = false
 		_build_model(_model_path)
 		_seed_dust()
-		_hide_bottom_ui()
+		_show_intro_btns()                           # 开局右上先亮画廊+播放
 		_sfx_click.play()                            # 进入未完成场景 → 按键音
 	_spin4()                                         # 入场旋转
 	_save_state()
@@ -1109,6 +1127,7 @@ func _process(delta: float) -> void:
 func _set_washing(on: bool, pos: Vector2) -> void:
 	if on and not _washing:
 		_washing = true
+		_fade_out_intro_btns()             # 首次擦拭 → 开局按钮淡出
 		_wash_screen = pos
 		_spray(pos)                        # 先把发射点移到当前触点，否则 restart 会在上次松手位置喷出残留水珠
 		if _fade_tween != null and _fade_tween.is_valid():
@@ -1194,6 +1213,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			_rotate_by(event.relative)
 
 func _rotate_by(delta: Vector2) -> void:
+	if _intro_btns and delta.length() > 1.0:   # 首次旋转 → 开局按钮淡出
+		_fade_out_intro_btns()
 	_manual_rot.x -= delta.y * ROT_SENS
 	_manual_rot.y += delta.x * ROT_SENS
 
