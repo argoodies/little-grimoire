@@ -264,8 +264,8 @@ func _glass_style(pressed := false) -> StyleBoxFlat:
 	sb.set_corner_radius_all(44)
 	sb.set_border_width_all(2)
 	sb.border_color = Color(1.0, 1.0, 1.0, 0.24)
-	sb.shadow_color = Color(0.6, 0.8, 1.0, 0.18)   # 淡蓝柔光，像透镜
-	sb.shadow_size = 10
+	sb.shadow_color = Color(0.6, 0.8, 1.0, 0.08)   # 淡蓝柔光（减弱）
+	sb.shadow_size = 8
 	sb.set_content_margin_all(18.0)                # 图标内缩，四周留玻璃边
 	return sb
 
