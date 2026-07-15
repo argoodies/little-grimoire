@@ -820,9 +820,9 @@ func _open_room() -> void:
 	_room_root.add_child(plank)
 	# 桌板正上方一盏聚光把整桌打亮 + 一点冷色补光。
 	var top := SpotLight3D.new()
-	top.position = Vector3(0, 14, 4)                            # 桌面上方不高处
+	top.position = Vector3(0, 36, 0)                            # 高处俯照，覆盖大部分桌面
 	top.rotation = Vector3(-PI * 0.5, 0, 0)                     # 朝下
-	top.light_energy = 6.0; top.spot_range = 60.0; top.spot_angle = 62.0
+	top.light_energy = 14.0; top.spot_range = 90.0; top.spot_angle = 42.0
 	top.light_color = Color(1.0, 0.96, 0.9); top.shadow_enabled = false
 	_room_root.add_child(top)
 	var fill := OmniLight3D.new()
