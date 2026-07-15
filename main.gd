@@ -1055,7 +1055,7 @@ func _room_sim(delta: float) -> void:
 		var pos: PackedVector3Array = entry.get("pos")
 		var vel: PackedVector3Array = entry.get("vel")
 		var avel: PackedVector3Array = entry.get("avel")
-		var ADRAG := exp(-1.2 * delta)                # 角速度水阻力
+		var ADRAG := exp(-0.5 * delta)                # 角速度水阻力（放缓，维持 ~1 圈/秒）
 		for i in pos.size():
 			var p := pos[i]
 			var v := vel[i]
@@ -1159,7 +1159,7 @@ func _room_impact(pos: Vector2) -> void:
 				var rax := Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1))
 				if rax.length() < 0.01:
 					rax = Vector3.UP
-				avels[i] += rax.normalized() * (randf_range(4.0, 9.0) * fall)
+				avels[i] += rax.normalized() * (randf_range(5.6, 7.0) * fall)   # ≈1 圈/秒
 		entry["vel"] = vels
 		entry["avel"] = avels
 	_room_moving = true
