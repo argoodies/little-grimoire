@@ -81,6 +81,8 @@ var _map_btn: Button
 var _in_room := false
 var _room_root: Node3D                        # 成就空间根
 var _room_dist := 30.0                          # 相机到注视点距离（随规模自适应）
+var _room_dist_min := 8.0                       # 放大上限：瓶宽=屏 80%
+var _room_dist_max := 40.0                      # 缩小下限：瓶宽=屏 33%
 var _room_dragging := false
 var _room_touches: Dictionary = {}              # 空间内多点触摸（拖拽=旋转，双指=缩放）
 var _room_pinch := 0.0                           # 上一帧双指间距
@@ -911,8 +913,12 @@ func _open_room() -> void:
 		_bub_life[i] = 0.0
 		_bubble_mm.set_instance_transform(i, hidden)
 	_room_moving = true                             # 开场即开始下沉/沉底
-	# 相机距离随瓶大小自适应。
-	_room_dist = clampf(_room_R * 3.2 + _room_top * 0.5, 16.0, 150.0)
+	# 缩放边界：瓶最宽=2·_room_R，占屏宽比 f 时距离 d=_room_R/(f·tan(fov/2))。
+	# 放大上限=瓶宽占屏 80%（最近），缩小下限=占屏 33%（最远）。
+	var half_tan := tan(deg_to_rad(_camera.fov) * 0.5)
+	_room_dist_min = _room_R / (0.80 * half_tan)
+	_room_dist_max = _room_R / (0.33 * half_tan)
+	_room_dist = clampf(_room_R * 3.2 + _room_top * 0.5, _room_dist_min, _room_dist_max)
 	_update_room_cam()
 
 func _spawn_bubble(at: Vector3, radius: float) -> void:
@@ -1215,7 +1221,7 @@ func _room_orbit(rel: Vector2) -> void:
 	_update_room_cam()
 
 func _room_zoom(delta_px: float) -> void:
-	_room_dist = clampf(_room_dist - delta_px * 0.03, 4.0, 60.0)   # 拉近/拉远
+	_room_dist = clampf(_room_dist - delta_px * 0.03, _room_dist_min, _room_dist_max)   # 拉近/拉远
 	_update_room_cam()
 
 # 不透明"成就水晶"材质：顶点着色器做每实例自转 + 上下浮动（零 CPU），
