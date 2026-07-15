@@ -862,6 +862,7 @@ func _open_room() -> void:
 	add_child(_room_root)
 	# 涟漪状态复位。
 	_room_time = 0.0
+	_last_bubble_t = -1.0                            # 水泡声节流时钟复位（否则重开后一段时间不响）
 	_rip_idx = 0
 	_room_rips.clear()
 	for i in MAX_RIP:
