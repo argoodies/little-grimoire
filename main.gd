@@ -54,6 +54,8 @@ var _sfx_reward: AudioStreamPlayer
 var _sfx_ding: AudioStreamPlayer
 var _sfx_click: AudioStreamPlayer
 var _sfx_whoosh: AudioStreamPlayer
+var _sfx_bubble: AudioStreamPlayer
+var _last_bubble_t := -1.0                   # 冲击水泡声节流时钟
 var _godray_mat: ShaderMaterial
 var _godray_layer: CanvasLayer
 var _spray_fx: CPUParticles3D             # 喷水水花粒子
@@ -215,6 +217,10 @@ func _build_audio() -> void:
 	_sfx_whoosh.stream = load("res://sounds/shroud.wav")
 	_sfx_whoosh.volume_db = 0.0
 	add_child(_sfx_whoosh)
+	_sfx_bubble = AudioStreamPlayer.new()
+	_sfx_bubble.stream = load("res://sounds/bubble.wav")
+	_sfx_bubble.volume_db = 0.0
+	add_child(_sfx_bubble)
 
 func _build_environment() -> void:
 	var we := WorldEnvironment.new()
@@ -1169,6 +1175,11 @@ func _room_impact(pos: Vector2) -> void:
 	if p.length() > _room_water_r:
 		p = p.normalized() * _room_water_r
 	var center := Vector3(p.x, _room_cy, p.y)
+	# 冲击水泡声：拖拽会连续触发，节流到 ~0.14s 一次，随机音高更自然。
+	if _sfx_bubble != null and (_last_bubble_t < 0.0 or _room_time - _last_bubble_t > 0.14):
+		_last_bubble_t = _room_time
+		_sfx_bubble.pitch_scale = randf_range(0.85, 1.2)
+		_sfx_bubble.play()
 	# 视觉：记录冲击中心（水面/水体会闪一团渐隐光）。
 	_room_rips[_rip_idx] = Vector4(center.x, center.y, center.z, _room_time)
 	_rip_idx = (_rip_idx + 1) % MAX_RIP
