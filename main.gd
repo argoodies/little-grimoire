@@ -105,6 +105,7 @@ var _room_moving := false                          # 是否还有水晶在动（
 var _room_inner_r := 8.0                           # 水晶可达最大半径（不出瓶）
 var _room_y_lo := -4.0
 var _room_y_hi := 4.0
+var _room_burst_r := 5.0                           # 一片冲击的作用半径
 var _cam_saved := Transform3D.IDENTITY
 var _counts: Dictionary = {}                  # 模型 path -> 完成(交付)次数
 var _centered_cache: Dictionary = {}          # path -> 居中归一化后的 ArrayMesh 缓存
@@ -850,6 +851,7 @@ func _open_room() -> void:
 	_room_inner_r = inner_r
 	_room_y_lo = y_lo
 	_room_y_hi = y_hi
+	_room_burst_r = jar_r * 0.6
 	_room_mmis.clear()
 	_room_moving = false
 
@@ -869,6 +871,7 @@ func _open_room() -> void:
 	wbody.mesh = wm
 	wbody.position.y = -jar_h * 0.5 + wh * 0.5
 	_room_waterbody_mat = ShaderMaterial.new(); _room_waterbody_mat.shader = _make_water_body_shader()
+	_room_waterbody_mat.set_shader_parameter("burst", jar_r * 0.6)
 	wbody.material_override = _room_waterbody_mat
 	_room_root.add_child(wbody)
 	# 水面（可涟漪的圆盘）。
@@ -878,6 +881,7 @@ func _open_room() -> void:
 	surf.mesh = sm; surf.position.y = water_top
 	_room_water_mat = ShaderMaterial.new(); _room_water_mat.shader = _make_water_surface_shader()
 	_room_water_mat.set_shader_parameter("radius", _room_water_r)
+	_room_water_mat.set_shader_parameter("burst", jar_r * 0.6)
 	surf.material_override = _room_water_mat
 	_room_root.add_child(surf)
 	# 灯光：瓶顶上方俯照 + 中心补光。
@@ -994,7 +998,7 @@ func _room_input(event: InputEvent) -> void:
 			if _room_touches.size() == 1:
 				_room_on_jar = _ray_hits_jar(event.position)   # 落在瓶上 → 玩水不旋转
 				if _room_on_jar:
-					_room_ripple(event.position)
+					_room_impact(event.position)
 		else:
 			_room_touches.erase(event.index)
 			if _room_touches.size() == 0:
@@ -1006,7 +1010,7 @@ func _room_input(event: InputEvent) -> void:
 			_room_touches[event.index] = event.position
 		if _room_touches.size() == 1:
 			if _room_on_jar:
-				_room_ripple(event.position)          # 在瓶上拖 → 连续起涟漪，不旋转
+				_room_impact(event.position)          # 在瓶上拖 → 连续起涟漪，不旋转
 			else:
 				_room_orbit(event.relative)           # 瓶外拖 → 旋转视角
 		elif _room_touches.size() == 2:
@@ -1022,7 +1026,7 @@ func _room_input(event: InputEvent) -> void:
 				_room_pitch_vel = 0.0
 				_room_on_jar = _ray_hits_jar(event.position)
 				if _room_on_jar:
-					_room_ripple(event.position)
+					_room_impact(event.position)
 			else:
 				_room_on_jar = false
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
@@ -1032,13 +1036,12 @@ func _room_input(event: InputEvent) -> void:
 	elif event is InputEventMouseMotion:
 		if _room_dragging:
 			if _room_on_jar:
-				_room_ripple((event as InputEventMouseMotion).position)
+				_room_impact((event as InputEventMouseMotion).position)
 			else:
 				_room_orbit((event as InputEventMouseMotion).relative)
 
 # 物理模拟：涟漪波前经过 → 给冲量；每帧积分位置，水阻力(阻尼)减速，限制在瓶内。
 func _room_sim(delta: float) -> void:
-	var FORCE := 14.0                                 # 冲量强度
 	var DRAG := exp(-0.9 * delta)                     # 水阻力（减小 → 漂得更久）
 	var GRAV := 2.2                                   # 重力：最终沉底
 	var moving := false
@@ -1052,22 +1055,6 @@ func _room_sim(delta: float) -> void:
 		for i in pos.size():
 			var p := pos[i]
 			var v := vel[i]
-			for rip in _room_rips:
-				var rv: Vector4 = rip
-				if rv.w < 0.0:
-					continue
-				var t := _room_time - rv.w
-				if t < 0.0 or t > 3.0:
-					continue
-				var center := Vector3(rv.x, rv.y, rv.z)
-				var dist := p.distance_to(center)
-				var front := t * 8.0
-				var pulse := (1.0 - smoothstep(0.0, 1.8, absf(dist - front))) * exp(-t * 1.2)
-				if pulse > 0.001:
-					var dv := p - center
-					if dv.length() < 0.001:
-						dv = Vector3.UP
-					v += (dv.normalized() * 0.85 + Vector3.UP * 0.35) * (pulse * FORCE * delta)
 			v *= DRAG                                 # 水阻力减速
 			v.y -= GRAV * delta                       # 重力下沉
 			p += v * delta
@@ -1110,26 +1097,46 @@ func _ray_hits_jar(pos: Vector2) -> bool:
 	var closest := o2 + d2 * proj
 	return closest.length() < _room_jar_r
 
-# 点击处投射到水中一点（瓶内中心高度平面），加一道 3D 涟漪；水面与水体都会显现。
-func _room_ripple(pos: Vector2) -> void:
+# 点击处投射到水中一点，产生"一片冲击"：对该处一定范围内的水晶施加即时爆发冲量。
+func _room_impact(pos: Vector2) -> void:
 	var from := _camera.project_ray_origin(pos)
 	var dir := _camera.project_ray_normal(pos)
 	if absf(dir.y) < 0.0001:
 		return
-	var t := (_room_cy - from.y) / dir.y             # 与瓶内中心高度平面求交
+	var t := (_room_cy - from.y) / dir.y
 	if t < 0.0:
 		return
 	var hit := from + dir * t
 	var p := Vector2(hit.x, hit.z)
 	if p.length() > _room_water_r:
 		p = p.normalized() * _room_water_r
-	_room_rips[_rip_idx] = Vector4(p.x, _room_cy, p.y, _room_time)   # xyz=中心, w=起始时间
+	var center := Vector3(p.x, _room_cy, p.y)
+	# 视觉：记录冲击中心（水面/水体会闪一团渐隐光）。
+	_room_rips[_rip_idx] = Vector4(center.x, center.y, center.z, _room_time)
 	_rip_idx = (_rip_idx + 1) % MAX_RIP
 	var pk := PackedVector4Array(_room_rips)
 	if _room_water_mat != null:
 		_room_water_mat.set_shader_parameter("rips", pk)
 	if _room_waterbody_mat != null:
 		_room_waterbody_mat.set_shader_parameter("rips", pk)
+	# 物理：范围内水晶立刻被冲开（离心 + 略向上，随距离衰减）。
+	var STR := 9.0
+	for entry in _room_mmis:
+		var node: MultiMeshInstance3D = entry.get("node")
+		if not is_instance_valid(node):
+			continue
+		var poss: PackedVector3Array = entry.get("pos")
+		var vels: PackedVector3Array = entry.get("vel")
+		for i in poss.size():
+			var d := poss[i].distance_to(center)
+			if d < _room_burst_r:
+				var fall := 1.0 - d / _room_burst_r
+				var dv := poss[i] - center
+				if dv.length() < 0.001:
+					dv = Vector3(randf_range(-1, 1), 0.5, randf_range(-1, 1))
+				vels[i] += (dv.normalized() * 0.85 + Vector3.UP * 0.4) * (STR * fall)
+		entry["vel"] = vels
+	_room_moving = true
 
 func _room_two_dist() -> float:
 	var pts := _room_touches.values()
@@ -1208,24 +1215,23 @@ render_mode cull_disabled, blend_mix, depth_draw_never;
 uniform vec3 wtint : source_color = vec3(0.2, 0.45, 0.9);
 uniform vec4 rips[6];      // xyz=中心, w=起始时间(<0 未激活)
 uniform float rtime = 0.0;
+uniform float burst = 5.0;
 varying vec3 wpos;
 void vertex() { wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
 void fragment() {
 	float fres = pow(1.0 - clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0), 2.0);
-	float rip = 0.0;
+	float hit = 0.0;
 	for (int i = 0; i < 6; i++) {
 		if (rips[i].w < 0.0) continue;
 		float t = rtime - rips[i].w;
-		if (t < 0.0 || t > 3.0) continue;
-		float dist = distance(wpos, rips[i].xyz);     // 3D 距离 → 球面壳
-		float front = t * 8.0;
-		float ring = smoothstep(1.6, 0.0, abs(dist - front));
-		rip += ring * exp(-t * 1.2);
+		if (t < 0.0 || t > 1.2) continue;
+		float dist = distance(wpos, rips[i].xyz);     // 一团冲击：中心亮、原地渐隐
+		hit += smoothstep(burst, 0.0, dist) * exp(-t * 4.0);
 	}
 	ALBEDO = wtint;
 	ROUGHNESS = 0.1;
-	EMISSION = wtint * (0.12 + 1.2 * rip);
-	ALPHA = clamp(mix(0.18, 0.36, fres) + 0.5 * rip, 0.0, 0.85);
+	EMISSION = wtint * (0.12 + 1.4 * hit);
+	ALPHA = clamp(mix(0.18, 0.36, fres) + 0.5 * hit, 0.0, 0.9);
 }
 """
 	return sh
@@ -1240,28 +1246,26 @@ uniform vec3 wtint : source_color = vec3(0.35, 0.6, 1.0);
 uniform float radius = 8.0;
 uniform vec4 rips[6];      // xyz=中心, w=起始时间(<0 未激活)
 uniform float rtime = 0.0;
+uniform float burst = 5.0;
 varying vec3 wpos;
 void vertex() { wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
 void fragment() {
 	float d = length(wpos.xz);
 	if (d > radius) discard;
-	float rip = 0.0;
+	float hit = 0.0;
 	for (int i = 0; i < 6; i++) {
 		if (rips[i].w < 0.0) continue;
 		float t = rtime - rips[i].w;
-		if (t < 0.0 || t > 3.0) continue;
+		if (t < 0.0 || t > 1.2) continue;
 		float dist = distance(wpos.xz, rips[i].xz);
-		float front = t * 7.0;
-		float ring = smoothstep(1.2, 0.0, abs(dist - front));
-		float wave = sin(dist * 3.5 - t * 11.0);
-		rip += wave * ring * exp(-t * 1.3);
+		hit += smoothstep(burst, 0.0, dist) * exp(-t * 4.0);   // 一团冲击原地渐隐
 	}
 	float edge = smoothstep(radius, radius * 0.85, d);
 	ALBEDO = wtint;
 	ROUGHNESS = 0.05;
 	SPECULAR = 0.9;
-	EMISSION = wtint * (0.14 + 0.7 * abs(rip));
-	ALPHA = clamp(0.28 + 0.5 * abs(rip), 0.0, 0.9) * edge;
+	EMISSION = wtint * (0.14 + 1.0 * hit);
+	ALPHA = clamp(0.28 + 0.6 * hit, 0.0, 0.95) * edge;
 }
 """
 	return sh
