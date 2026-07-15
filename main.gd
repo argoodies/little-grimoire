@@ -1122,8 +1122,9 @@ func _room_impact(pos: Vector2) -> void:
 		_room_water_mat.set_shader_parameter("rips", pk)
 	if _room_waterbody_mat != null:
 		_room_waterbody_mat.set_shader_parameter("rips", pk)
-	# 物理：范围内水晶立刻被冲开（离心 + 略向上，随距离衰减）。
-	var STR := 9.0
+	# 物理：竖直柱状冲击——按水平距离判定，把该列水晶（含已沉底的）向外+强烈向上掀起。
+	var STR := 13.0
+	var c2 := Vector2(center.x, center.z)
 	for entry in _room_mmis:
 		var node: MultiMeshInstance3D = entry.get("node")
 		if not is_instance_valid(node):
@@ -1131,13 +1132,15 @@ func _room_impact(pos: Vector2) -> void:
 		var poss: PackedVector3Array = entry.get("pos")
 		var vels: PackedVector3Array = entry.get("vel")
 		for i in poss.size():
-			var d := poss[i].distance_to(center)
+			var pxz := Vector2(poss[i].x, poss[i].z)
+			var d := pxz.distance_to(c2)
 			if d < _room_burst_r:
 				var fall := 1.0 - d / _room_burst_r
-				var dv := poss[i] - center
-				if dv.length() < 0.001:
-					dv = Vector3(randf_range(-1, 1), 0.5, randf_range(-1, 1))
-				vels[i] += (dv.normalized() * 0.85 + Vector3.UP * 0.4) * (STR * fall)
+				var dh := pxz - c2
+				var dirh := Vector3(dh.x, 0.0, dh.y)
+				if dirh.length() < 0.001:
+					dirh = Vector3(randf_range(-1, 1), 0.0, randf_range(-1, 1))
+				vels[i] += (dirh.normalized() * 0.7 + Vector3.UP * 0.9) * (STR * fall)
 		entry["vel"] = vels
 	_room_moving = true
 
