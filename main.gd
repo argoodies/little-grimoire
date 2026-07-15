@@ -74,8 +74,9 @@ const TABLE_SPACING := 2.6                      # 桌面上模型的密堆积间
 const TABLE_DISP := 0.55                        # 模型在桌上的显示缩放（相对 TARGET_W）
 const BOARD_LEN := 40.0                         # 桌板长边（约拼图的 20 倍，拼图桌上显示 ~2 单位）
 const ROOM_CENTER_Y := 2.0                      # 相机注视点高度（桌面之上）
-var _room_orient := Basis.IDENTITY                # 自由 trackball 朝向（无万向锁）
-var _room_spin := Vector2.ZERO                     # 惯性角速度（局部 x/y，弧度/秒）
+const ROOM_ELEV := 0.32                            # 固定俯角（略高于水平看瓶子）
+var _room_yaw := 0.0                               # 绕竖直轴方位角
+var _room_yaw_vel := 0.0                           # 方位角惯性（弧度/秒）
 var _map_btn: Button
 var _in_room := false
 var _room_root: Node3D                        # 成就空间根
@@ -825,8 +826,8 @@ func _open_room() -> void:
 		_map_btn.modulate.a = 1.0
 	# 神光保留开启（下面 _process 里把光心设到空间中心）。
 	_cam_saved = _camera.transform
-	_room_orient = Basis.from_euler(Vector3(-0.35, 0.0, 0.0))   # 略微俯视的默认朝向
-	_room_spin = Vector2.ZERO
+	_room_yaw = 0.0
+	_room_yaw_vel = 0.0
 	_room_dragging = false
 	_room_touches.clear()
 	if _room_root != null and is_instance_valid(_room_root):
@@ -1000,16 +1001,19 @@ func _build_room_multimesh(path: String, count: int, start_g: int) -> MultiMeshI
 	return mmi
 
 func _update_room_cam() -> void:
-	# trackball：相机在朝向 _room_orient 的 +Z 距离处，basis=朝向（无 look_at，故无万向锁）。
+	# 只绕竖直轴旋转：固定俯角 ROOM_ELEV，方位角 _room_yaw 决定绕 Y 环绕位置。
 	var center := Vector3(0.0, _room_cy, 0.0)
-	_camera.transform = Transform3D(_room_orient, center + _room_orient * Vector3(0.0, 0.0, _room_dist))
+	var ce := cos(ROOM_ELEV)
+	var offset := Vector3(ce * sin(_room_yaw), sin(ROOM_ELEV), ce * cos(_room_yaw)) * _room_dist
+	_camera.transform = Transform3D.IDENTITY.looking_at(-offset, Vector3.UP)
+	_camera.transform.origin = center + offset
 
 # 成就空间内触摸：单指落下=点水起涟漪、拖拽=旋转视角，双指捏合缩放；鼠标滚轮缩放。
 func _room_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			_room_touches[event.index] = event.position
-			_room_spin = Vector2.ZERO
+			_room_yaw_vel = 0.0
 			if _room_touches.size() == 1:
 				_room_on_jar = _ray_hits_jar(event.position)   # 落在瓶上 → 玩水不旋转
 				if _room_on_jar:
@@ -1037,7 +1041,7 @@ func _room_input(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			_room_dragging = event.pressed
 			if event.pressed:
-				_room_spin = Vector2.ZERO
+				_room_yaw_vel = 0.0
 				_room_on_jar = _ray_hits_jar(event.position)
 				if _room_on_jar:
 					_room_impact(event.position)
@@ -1203,16 +1207,12 @@ func _room_two_dist() -> float:
 	return (pts[0] as Vector2).distance_to(pts[1])
 
 func _room_orbit(rel: Vector2) -> void:
+	# 只用水平分量绕竖直轴转；竖直拖拽忽略。
 	var dx := -rel.x * ROOM_ROT_SENS
-	var dy := -rel.y * ROOM_ROT_SENS
-	_room_apply_rot(dx, dy)
+	_room_yaw += dx
 	var dt := maxf(get_process_delta_time(), 0.0001)
-	_room_spin = Vector2(dx, dy) / dt                               # 记录角速度供松手惯性
+	_room_yaw_vel = dx / dt                                         # 记录角速度供松手惯性
 	_update_room_cam()
-
-# 在朝向局部坐标系里增量旋转（绕局部 Y 与局部 X），自由无万向锁。
-func _room_apply_rot(dx: float, dy: float) -> void:
-	_room_orient = (_room_orient * Basis(Vector3.UP, dx) * Basis(Vector3.RIGHT, dy)).orthonormalized()
 
 func _room_zoom(delta_px: float) -> void:
 	_room_dist = clampf(_room_dist - delta_px * 0.03, 4.0, 60.0)   # 拉近/拉远
@@ -1529,9 +1529,9 @@ func _process(delta: float) -> void:
 	if _in_room:                              # 成就空间：自转/浮动在 shader 里跑
 		# 松手后的旋转惯性（不在拖拽时才滑行，带指数衰减）。
 		var dragging := _room_dragging or _room_touches.size() >= 1
-		if not dragging and _room_spin.length() > 0.002:
-			_room_apply_rot(_room_spin.x * delta, _room_spin.y * delta)
-			_room_spin *= pow(0.05, delta)        # 惯性衰减
+		if not dragging and absf(_room_yaw_vel) > 0.002:
+			_room_yaw += _room_yaw_vel * delta
+			_room_yaw_vel *= pow(0.05, delta)     # 惯性衰减
 			_update_room_cam()
 		_room_time += delta                       # 涟漪时钟
 		if _room_water_mat != null:
