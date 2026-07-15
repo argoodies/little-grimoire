@@ -636,12 +636,18 @@ func _on_video_finished() -> void:
 func _finish_challenge() -> void:
 	if _challenge < CHALLENGE_TARGETS.size():
 		_challenge += 1                        # 进入下一挑战（如 x/30）
+	_counts.clear()                            # 完成后清空成就水晶，新挑战从 0 重新收集
 	_room_circle_lock = false
 	_room_circle_shown = false
 	if _room_circle_btn != null:
 		_room_circle_btn.visible = false
 	_save_state()
-	_update_room_progress()
+	if _in_room:                               # 重建空瓶（保住游戏相机），并刷新进度
+		var saved := _cam_saved
+		_open_room()
+		_cam_saved = saved
+	else:
+		_update_room_progress()
 
 func _apply_lighting(animate: bool) -> void:
 	var dir_c := Color(0.62, 0.74, 1.0) if _night else Color(1.0, 0.94, 0.85)
