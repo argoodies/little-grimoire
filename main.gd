@@ -55,6 +55,7 @@ var _sfx_ding: AudioStreamPlayer
 var _sfx_click: AudioStreamPlayer
 var _sfx_whoosh: AudioStreamPlayer
 var _godray_mat: ShaderMaterial
+var _godray_layer: CanvasLayer
 var _spray_fx: CPUParticles3D             # 喷水水花粒子
 var _droplet_mat: StandardMaterial3D      # 水珠共享材质（松手时整体淡出）
 var _fade_tween: Tween                     # 松手后整体淡出的 tween
@@ -67,24 +68,19 @@ var _env: Environment
 var _night := false
 var _toggle_btn: Button
 
-# ---------- 选关画廊（3D 横向翻页轮播）----------
-const PAGE_DX := 8.0                          # 相邻两页在世界里的横向间距（大于屏宽，邻页在屏外）
+# ---------- 成就空间（完成过的模型按次数漂浮展示）----------
+const ROOM_CAP := 120                         # 每种模型最多实例数（性能上限）
+const ROOM_R := 9.0                           # 漂浮空间半径
+const ROOM_DIST := 17.0                        # 相机到空间中心的距离
 var _map_btn: Button
-var _in_gallery := false
-var _gallery_root: Node3D                     # 画廊根
-var _gal_holders: Array = []                  # 每关一个 holder（环形排布）
-var _gal_page := 0                            # 当前居中关
-var _gal_prev_page := -1                       # 上次居中关（换页触发旋转）
-var _gal_scroll := 0.0                        # 连续滚动位置（世界单位，=应居中的世界 x）
-var _gal_dragging := false
-var _gal_sx := 0.0                            # 触摸起点 x（像素）
-var _gal_moved := false
-var _gal_rot := Vector3.ZERO                   # 当前页旋转目标 euler（惯性 lerp 追随）
-var _gal_tw: Tween                            # 翻页动画
-var _gal_ui: CanvasLayer                       # 左右翻页按钮层
-var _gal_spin_tw: Tween                        # 入场旋转动画（拖拽时打断）
+var _in_room := false
+var _room_root: Node3D                        # 成就空间根（每种模型一个 MultiMeshInstance3D）
+var _room_yaw := 0.0
+var _room_pitch := 0.15
+var _room_dragging := false
 var _cam_saved := Transform3D.IDENTITY
-var _unlocked: Array = []                    # 解锁过(擦净交付)的模型 path
+var _counts: Dictionary = {}                  # 模型 path -> 完成(交付)次数
+var _centered_cache: Dictionary = {}          # path -> 居中归一化后的 ArrayMesh 缓存
 
 func _ready() -> void:
 	randomize()
@@ -109,7 +105,7 @@ func _ready() -> void:
 func _save_state() -> void:
 	var f := FileAccess.open(SAVE_STATE, FileAccess.WRITE)
 	if f != null:
-		f.store_string(JSON.stringify({"night": _night, "unlocked": _unlocked}))
+		f.store_string(JSON.stringify({"night": _night, "counts": _counts}))
 		f.close()
 
 func _load_prefs() -> void:
@@ -118,11 +114,17 @@ func _load_prefs() -> void:
 	var cfg = JSON.parse_string(FileAccess.get_file_as_string(SAVE_STATE))
 	if cfg is Dictionary:
 		_night = bool(cfg.get("night", false))
+		var cnt = cfg.get("counts", {})
+		if cnt is Dictionary:
+			for p in cnt:
+				if p in MODELS:
+					_counts[p] = int(cnt[p])
+		# 兼容旧存档：unlocked 数组 → 各计 1 次
 		var ul = cfg.get("unlocked", [])
 		if ul is Array:
 			for p in ul:
-				if p in MODELS and not _unlocked.has(p):
-					_unlocked.append(p)
+				if p in MODELS and not _counts.has(p):
+					_counts[p] = 1
 
 # 按当前 _btn_state 恢复底部按钮显示。
 func _apply_bottom_state() -> void:
@@ -618,8 +620,7 @@ func _enter_delivered() -> void:
 	_washing = false
 	_sfx_water.stop()
 	_sfx_reward.play()
-	if not _unlocked.has(_model_path):          # 解锁当前模型
-		_unlocked.append(_model_path)
+	_counts[_model_path] = int(_counts.get(_model_path, 0)) + 1   # 完成次数 +1
 	_save_state()
 	# 圆圈变对勾并锁定，1 秒后对勾渐隐 → 双按钮渐现。
 	_circle_btn.icon = load("res://textures/icon_check.png")
@@ -673,6 +674,7 @@ func _build_godrays() -> void:
 	var layer := CanvasLayer.new()
 	layer.layer = 0                          # 在 3D 之上、UI 按钮(layer 1)之下
 	add_child(layer)
+	_godray_layer = layer
 	var rect := ColorRect.new()
 	rect.set_anchors_preset(Control.PRESET_FULL_RECT)
 	rect.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -761,263 +763,164 @@ func _find_mesh(n: Node) -> MeshInstance3D:
 			return r
 	return null
 
-# ---------- 选关画廊（2D 平面）----------
-# 横向循环翻页轮播：一次居中展示一关的 3D 模型。
-# 已完成(解锁)的显示为洗净无尘的通透水晶；未完成的显示为覆满尘土。
-# 左右滑动翻页(循环)，轻点当前模型进入该关，右上地图按钮返回。
+# ---------- 成就空间 ----------
+# 点画廊按钮进入一个沉浸空间：按完成次数摆放你清扫过的每种模型（如 10 个 puzzle、5 个车），
+# 全在空间里漂浮 + 轻微自转，拖屏旋转整个空间的视角。
+# 性能：每种模型用一个 MultiMeshInstance3D（1 次 draw call 画任意数量），
+#       不透明材质（写深度，硬件早 Z 天然做遮挡剔除），自转/浮动放到顶点着色器里（零 CPU）。
 
 func _toggle_gallery() -> void:
 	_sfx_click.play()
-	if _in_gallery:
-		_close_gallery()
+	if _in_room:
+		_close_room()
 	else:
-		_open_gallery()
+		_open_room()
 
-func _open_gallery() -> void:
-	_in_gallery = true
+func _open_room() -> void:
+	_in_room = true
 	_touches.clear()
-	_world.visible = false                       # 藏起当前水晶
+	_world.visible = false
 	_spray_fx.emitting = false
 	_spray_fx.visible = false
 	_toggle_btn.visible = false
-	_hide_bottom_ui()                            # 画廊页隐藏底部按钮，改用画廊内返回按钮
+	_hide_bottom_ui()
+	if _map_btn != null:
+		_map_btn.visible = true                   # 保留地图按钮作返回（再点退出）
+		_map_btn.modulate.a = 1.0
+	if _godray_layer != null:
+		_godray_layer.visible = false             # 空间里关掉神光，避免多水晶叠加发疯 + 省性能
 	_cam_saved = _camera.transform
-	_camera.transform = Transform3D(Basis.IDENTITY, Vector3(0.0, 0.5, 7.36))
-	if _gallery_root != null and is_instance_valid(_gallery_root):
-		_gallery_root.queue_free()
-	_gallery_root = Node3D.new()
-	add_child(_gallery_root)
-	_gal_holders.clear()
-	_gal_holders.resize(MODELS.size())            # 懒加载：先全 null，用到才建
-	_gal_page = clampi(_gal_page, 0, MODELS.size() - 1)
-	_gal_scroll = float(_gal_page) * PAGE_DX
-	_gal_dragging = false
-	_gal_prev_page = -1                           # 让开场首页也触发入场旋转
-	_gal_ensure(_gal_page)                        # 只建当前页
-	_gal_layout()
-	_build_gal_buttons()
+	_room_yaw = 0.0
+	_room_pitch = 0.15
+	_room_dragging = false
+	if _room_root != null and is_instance_valid(_room_root):
+		_room_root.queue_free()
+	_room_root = Node3D.new()
+	add_child(_room_root)
+	# 环境补光（空间里没有主水晶内光了）。
+	var key := OmniLight3D.new()
+	key.position = Vector3(0, 6, 8); key.light_energy = 2.2; key.omni_range = 40.0
+	key.light_color = Color(0.7, 0.85, 1.0); key.shadow_enabled = false
+	_room_root.add_child(key)
+	var fill := OmniLight3D.new()
+	fill.position = Vector3(-6, -4, -6); fill.light_energy = 1.2; fill.omni_range = 40.0
+	fill.light_color = Color(0.4, 0.5, 0.9); fill.shadow_enabled = false
+	_room_root.add_child(fill)
+	# 每种"完成过"的模型 → 一个 MultiMeshInstance3D，实例数=完成次数。
+	var seed_i := 0
+	for path in MODELS:
+		var cnt := int(_counts.get(path, 0))
+		if cnt <= 0:
+			continue
+		_room_root.add_child(_build_room_multimesh(path, mini(cnt, ROOM_CAP), seed_i))
+		seed_i += 1
+	_update_room_cam()
 
-# 懒加载：需要某页时才实例化它的模型。
-func _gal_ensure(page: int) -> void:
-	if page < 0 or page >= _gal_holders.size():
-		return
-	var h = _gal_holders[page]
-	if h == null or not is_instance_valid(h):
-		_gal_holders[page] = _gal_make_page(page)
-
-func _close_gallery() -> void:
-	_in_gallery = false
-	if _gallery_root != null and is_instance_valid(_gallery_root):
-		_gallery_root.queue_free()
-		_gallery_root = null
-	if _gal_ui != null and is_instance_valid(_gal_ui):
-		_gal_ui.queue_free()
-		_gal_ui = null
-	_gal_holders.clear()
+func _close_room() -> void:
+	_in_room = false
+	if _room_root != null and is_instance_valid(_room_root):
+		_room_root.queue_free()
+		_room_root = null
 	_world.visible = true
 	_spray_fx.visible = true
 	_toggle_btn.visible = true
-	_apply_bottom_state()                         # 回主游戏，按当前状态恢复底部按钮
+	if _godray_layer != null:
+		_godray_layer.visible = true
+	_apply_bottom_state()
 	_camera.transform = _cam_saved
 	_touches.clear()
 
-# 造一页：该关模型 + 双趟材质(洗净=全露/未洗=全覆尘) + 内部光源。
-func _gal_make_page(page: int) -> Node3D:
-	var holder := Node3D.new()
-	_gallery_root.add_child(holder)
-	var scene := (load(MODELS[page]) as PackedScene).instantiate()
-	holder.add_child(scene)
+# 归一化+居中后的 ArrayMesh（顶点减去中心、乘缩放），供 MultiMesh 复用；结果缓存。
+func _centered_mesh(path: String) -> ArrayMesh:
+	if _centered_cache.has(path):
+		return _centered_cache[path]
+	var scene := (load(path) as PackedScene).instantiate()
 	var m := _find_mesh(scene)
-	if m != null:
+	var out := ArrayMesh.new()
+	if m != null and m.mesh != null:
 		var ab := m.get_aabb()
 		var ext: float = maxf(ab.size.x, maxf(ab.size.y, ab.size.z))
 		var sc := TARGET_W / maxf(ext, 0.0001)
-		scene.scale = Vector3(sc, sc, sc)
-		scene.position = -(m.global_transform * ab.get_center())
-		# 双趟材质：灰尘层(底) + 水晶层(next_pass)。
-		var mat := ShaderMaterial.new()
-		mat.shader = _make_dust_shader()
-		var crystal := ShaderMaterial.new()
-		crystal.shader = _make_crystal_shader()
-		mat.next_pass = crystal
-		var done: bool = _unlocked.has(MODELS[page])
-		var img: Image
-		if done:
-			img = Image.create(8, 8, false, Image.FORMAT_L8)
-			img.fill(Color(1, 1, 1))                           # 全露=洗净
-		else:
-			# 未完成：和主游戏一样，随机约 20% 已擦的无尘区（其余覆尘）。
-			var arrays := m.mesh.surface_get_arrays(0)
-			img = _make_seeded_mask(arrays[Mesh.ARRAY_VERTEX], arrays[Mesh.ARRAY_TEX_UV], ab.size.length())
-		var tex := ImageTexture.create_from_image(img)
-		mat.set_shader_parameter("wash_mask", tex)
-		crystal.set_shader_parameter("wash_mask", tex)
-		m.material_override = mat
-	# 每页一盏内部光源，透出内芒 + 供神光。
-	var lt := OmniLight3D.new()
-	lt.light_color = Color(0.5, 0.75, 1.0)
-	lt.light_energy = 1.8
-	lt.omni_range = TARGET_W * 1.2
-	lt.shadow_enabled = false
-	holder.add_child(lt)
-	return holder
+		var center := ab.get_center()
+		var arrays := m.mesh.surface_get_arrays(0)
+		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
+		var nv := PackedVector3Array(); nv.resize(verts.size())
+		for i in verts.size():
+			nv[i] = (verts[i] - center) * sc
+		arrays[Mesh.ARRAY_VERTEX] = nv
+		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
+	scene.queue_free()
+	_centered_cache[path] = out
+	return out
 
-# 环形排布：每个 holder 取离视线中心最近的那份副本，实现无限循环。
-func _gal_layout() -> void:
-	var n := _gal_holders.size()
-	if n == 0:
-		return
-	var period := float(n) * PAGE_DX
-	for i in n:
-		var h: Node3D = _gal_holders[i]
-		if not is_instance_valid(h):
-			continue
-		var d: float = float(i) * PAGE_DX - _gal_scroll
-		d = fposmod(d + period * 0.5, period) - period * 0.5   # 折到 [-P/2, P/2)
-		h.position = Vector3(d, 0.0, 0.0)
-		h.visible = absf(d) < PAGE_DX * 0.75                   # 只显示屏内那页附近
-	_gal_page = int(round(_gal_scroll / PAGE_DX)) % n
-	_gal_page = (_gal_page + n) % n
-	if _gal_page != _gal_prev_page:                            # 换到新一页 → 入场旋转
-		_gal_prev_page = _gal_page
-		_gal_ensure(_gal_page)                                # 懒加载兜底
-		_gal_spin(_gal_holders[_gal_page])
+func _build_room_multimesh(path: String, count: int, seed_i: int) -> MultiMeshInstance3D:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = _centered_mesh(path)
+	mm.instance_count = count
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(hash(path)) + seed_i * 7919
+	for i in count:
+		# 空间内随机漂浮位置（球体分布）+ 随机基础朝向 + 轻微大小抖动。
+		var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1))
+		if dir.length() < 0.01:
+			dir = Vector3.UP
+		var pos := dir.normalized() * (ROOM_R * pow(rng.randf(), 0.5))
+		var basis := Basis(Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized(), rng.randf_range(0.0, TAU))
+		basis = basis.scaled(Vector3.ONE * rng.randf_range(0.34, 0.5))   # 缩小以便挤下更多
+		mm.set_instance_transform(i, Transform3D(basis, pos))
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	var mat := ShaderMaterial.new()
+	mat.shader = _make_room_shader()
+	mmi.material_override = mat
+	return mmi
 
-# 入场旋转：绕随机轴转 4 整圈 + 随机多转 0~180°（复用初始 spin 手感）。
-# 只改 basis（旋转），holder.position 仍由 _gal_layout 每帧掌控，互不干扰。
-func _gal_spin(holder: Node3D) -> void:
-	if not is_instance_valid(holder):
-		return
-	var axis := Vector3(randf_range(-1.0, 1.0), randf_range(-1.0, 1.0), randf_range(-1.0, 1.0))
-	if axis.length() < 0.01:
-		axis = Vector3.UP
-	axis = axis.normalized()
-	var extra := randf_range(0.0, PI)
-	_gal_spin_tw = create_tween().set_trans(Tween.TRANS_EXPO).set_ease(Tween.EASE_OUT)
-	_gal_spin_tw.tween_method(
-		func(a: float):
-			if is_instance_valid(holder):
-				holder.basis = Basis(axis, a),
-		0.0, TAU * 4.0 + extra, 1.9)
-	# 旋转结束后把惯性目标同步到最终朝向（若它仍是当前页），交给拖拽惯性接管。
-	_gal_spin_tw.tween_callback(func():
-		if is_instance_valid(holder) and holder == _gal_holders[_gal_page]:
-			_gal_rot = holder.rotation)
+func _update_room_cam() -> void:
+	var b := Basis.from_euler(Vector3(_room_pitch, _room_yaw, 0.0))
+	var pos: Vector3 = b * Vector3(0, 0, ROOM_DIST)
+	_camera.transform = Transform3D(Basis.IDENTITY, pos)
+	_camera.look_at(Vector3.ZERO, Vector3.UP)
 
-# 左右翻页按钮（屏幕两侧竖直居中）。
-func _build_gal_buttons() -> void:
-	if _gal_ui != null and is_instance_valid(_gal_ui):
-		_gal_ui.queue_free()
-	_gal_ui = CanvasLayer.new()
-	_gal_ui.layer = 5
-	add_child(_gal_ui)
-	var lb := _make_arrow("res://textures/arrow_l.png", false)
-	var rb := _make_arrow("res://textures/arrow_r.png", true)
-	lb.pressed.connect(func(): _gal_goto(-1))
-	rb.pressed.connect(func(): _gal_goto(1))
-	_gal_ui.add_child(lb)
-	_gal_ui.add_child(rb)
-
-func _make_arrow(path: String, right: bool) -> Button:
-	var b := Button.new()
-	b.icon = load(path)
-	b.expand_icon = true
-	b.focus_mode = Control.FOCUS_NONE
-	b.custom_minimum_size = Vector2(120, 120)
-	b.size = Vector2(120, 120)
-	_wire_press(b)
-	_apply_glass(b)                          # 毛玻璃透镜底
-	b.anchor_top = 0.5
-	b.anchor_bottom = 0.5
-	b.offset_top = -60.0
-	b.offset_bottom = 60.0
-	if right:
-		b.anchor_left = 1.0
-		b.anchor_right = 1.0
-		b.offset_left = -150.0
-		b.offset_right = -30.0
-	else:
-		b.offset_left = 30.0
-		b.offset_right = 150.0
-	return b
-
-# 按钮翻页：dir=+1 下一关 / -1 上一关，缓动补间平滑滑过一页（循环）。
-func _gal_goto(dir: int) -> void:
-	if MODELS.size() <= 1:
-		return
-	if _gal_tw != null and _gal_tw.is_valid():
-		_gal_tw.kill()
-	_sfx_click.play()
-	var n := MODELS.size()
-	var slot: float = round(_gal_scroll / PAGE_DX) + float(dir)
-	var target: float = slot * PAGE_DX
-	_gal_ensure(((int(slot) % n) + n) % n)          # 提前建好即将滑入的那页
-	_gal_tw = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
-	_gal_tw.tween_property(self, "_gal_scroll", target, 0.4)
-
-# 选定当前关：关闭画廊后进入该关。
-# 已完成(解锁)的关 → 进入完成态(整颗洗净 + 底部双按钮)；
-# 未完成的关 → 从头覆尘擦拭。
-func _pick_level(i: int) -> void:
-	_close_gallery()
-	_model_path = MODELS[i]
-	_mask_img = Image.create(MSZ, MSZ, false, Image.FORMAT_L8)
-	if _unlocked.has(MODELS[i]):
-		_mask_img.fill(Color(1, 1, 1))               # 整颗洗净
-		_btn_state = ST_DELIVERED
-		_delivered = true
-		_build_model(_model_path)
-		_show_intro_btns(false)                      # 右上双按钮（旋转淡出、静止回归）
-		_sfx_click.play()                            # 进入已完成场景 → 按键音
-	else:
-		_btn_state = ST_REFRESH
-		_delivered = false
-		_build_model(_model_path)
-		_seed_dust()
-		_show_intro_btns()                           # 开局右上先亮画廊+播放
-		_sfx_click.play()                            # 进入未完成场景 → 按键音
-	_spin4()                                         # 入场旋转
-	_save_state()
-
-# 画廊内触摸：拖拽旋转当前模型（翻页交给左右按钮）；轻点进入当前关。
-func _gallery_input(event: InputEvent) -> void:
+# 成就空间内触摸：拖拽旋转整个空间的视角。
+func _room_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch or event is InputEventMouseButton:
-		if event.pressed:
-			_gal_dragging = true
-			_gal_sx = event.position.x
-			_gal_moved = false
-			if _gal_spin_tw != null and _gal_spin_tw.is_valid():
-				_gal_spin_tw.kill()            # 手动旋转打断入场旋转
-			var h: Node3D = _gal_holders[_gal_page]
-			if is_instance_valid(h):
-				_gal_rot = h.rotation          # 从当前朝向接管，避免跳变
-		else:
-			_gal_dragging = false
-			if not _gal_moved and _gal_tap_hits(event.position):
-				_pick_level(_gal_page)         # 轻点命中水晶才进入（点背景不进）
+		_room_dragging = event.pressed
 	elif event is InputEventScreenDrag or event is InputEventMouseMotion:
-		if _gal_dragging:
+		if _room_dragging:
 			var rel: Vector2 = event.relative if event is InputEventScreenDrag else (event as InputEventMouseMotion).relative
-			if rel.length() > 2.0:
-				_gal_moved = true
-			_gal_rot.x -= rel.y * ROT_SENS     # 只更新目标，惯性由 _process 每帧 lerp 追随
-			_gal_rot.y += rel.x * ROT_SENS
+			_room_yaw -= rel.x * ROT_SENS
+			_room_pitch = clampf(_room_pitch + rel.y * ROT_SENS, -1.35, 1.35)
+			_update_room_cam()
 
-# 点击是否命中当前居中的水晶（相机射线 vs 模型包围球），点黑背景则不命中。
-func _gal_tap_hits(pos: Vector2) -> bool:
-	if _gal_page >= _gal_holders.size():
-		return false
-	var h: Node3D = _gal_holders[_gal_page]
-	if not is_instance_valid(h):
-		return false
-	var from := _camera.project_ray_origin(pos)
-	var dir := _camera.project_ray_normal(pos)
-	var c := h.global_position
-	var t: float = (c - from).dot(dir)
-	if t < 0.0:
-		return false
-	var closest := from + dir * t
-	return closest.distance_to(c) < TARGET_W * 0.6
+# 不透明"成就水晶"材质：顶点着色器做每实例自转 + 上下浮动（零 CPU），
+# 写深度 → 硬件早 Z 天然做遮挡剔除，避免透明叠加与排序开销。
+func _make_room_shader() -> Shader:
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode cull_back, specular_schlick_ggx;
+uniform vec3 tint : source_color = vec3(0.16, 0.45, 0.95);
+void vertex() {
+	float sd = float(INSTANCE_ID) * 2.3999632;
+	float ang = TIME * 0.35 + sd;
+	float s = sin(ang), c = cos(ang);
+	mat2 R = mat2(vec2(c, -s), vec2(s, c));
+	VERTEX.xz = R * VERTEX.xz;
+	NORMAL.xz = R * NORMAL.xz;
+	VERTEX.y += sin(TIME * 0.7 + sd) * 0.18;      // 轻微上下浮动
+}
+void fragment() {
+	vec3 N = normalize(NORMAL);
+	float fres = pow(1.0 - clamp(dot(N, normalize(VIEW)), 0.0, 1.0), 2.5);
+	ALBEDO = tint * 0.35;
+	METALLIC = 0.35;
+	ROUGHNESS = 0.12;
+	SPECULAR = 0.9;
+	EMISSION = tint * (0.35 + 1.5 * fres);        // 边缘辉光，像发光水晶
+}
+"""
+	return sh
 
 # 灰尘层：不透明、写深度、剔除背面 —— 覆尘处实心不穿模；露出处丢弃交给水晶层。
 func _make_dust_shader() -> Shader:
@@ -1106,18 +1009,7 @@ func _spray(screen_pos: Vector2) -> void:
 # ---------- 每帧 ----------
 
 func _process(delta: float) -> void:
-	if _in_gallery:                           # 画廊：按当前 scroll 重排 + 神光光心
-		_gal_layout()                         # scroll 由翻页补间驱动
-		# 入场旋转未进行时，当前页朝目标 euler 惯性 lerp（与主游戏同款手感）。
-		if _gal_spin_tw == null or not _gal_spin_tw.is_valid():
-			var h: Node3D = _gal_holders[_gal_page] if _gal_page < _gal_holders.size() else null
-			if is_instance_valid(h):
-				var weight := 1.0 - pow(0.002, delta)
-				h.rotation = h.rotation.lerp(_gal_rot, weight)
-		if _godray_mat != null:
-			var gvp := get_viewport().get_visible_rect().size
-			if gvp.x > 0.0 and gvp.y > 0.0:
-				_godray_mat.set_shader_parameter("light_uv", _camera.unproject_position(Vector3.ZERO) / gvp)
+	if _in_room:                              # 成就空间：自转/浮动在 shader 里跑，这里空转
 		return
 	if _spinning:
 		return                                # 旋转 4 周动画期间由 tween 接管
@@ -1180,8 +1072,8 @@ func _set_washing(on: bool, pos: Vector2) -> void:
 		_save_state()                       # 每次擦拭松手保存进度
 
 func _unhandled_input(event: InputEvent) -> void:
-	if _in_gallery:
-		_gallery_input(event)
+	if _in_room:
+		_room_input(event)
 		return
 	if event is InputEventScreenTouch:
 		if event.pressed:
