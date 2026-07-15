@@ -556,9 +556,10 @@ func _total_crystals() -> int:
 	return t
 
 func _show_room_progress(on: bool) -> void:
+	# 不显示进度条/数字（仅保留达标完成圆圈逻辑）。
 	if _room_prog != null:
-		_room_prog.visible = on
-		_room_prog_label.visible = on
+		_room_prog.visible = false
+		_room_prog_label.visible = false
 	if not on and _room_circle_btn != null:
 		_room_circle_btn.visible = false
 
@@ -636,7 +637,8 @@ func _on_video_finished() -> void:
 func _finish_challenge() -> void:
 	if _challenge < CHALLENGE_TARGETS.size():
 		_challenge += 1                        # 进入下一挑战（如 x/30）
-	_counts.clear()                            # 完成后清空成就水晶，新挑战从 0 重新收集
+	_counts.clear()                            # 完成后清空成就水晶，保留 1 个（不清到 0）
+	_counts[MODELS[0]] = 1
 	_room_circle_lock = false
 	_room_circle_shown = false
 	if _room_circle_btn != null:
