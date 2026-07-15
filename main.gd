@@ -113,6 +113,7 @@ var _room_neck_r := 2.4                            # 细口半径
 var _room_top := 15.0                              # 瓶口 y
 var _room_body_r := 6.4                            # 水晶容纳球半径（贴瓶身内）
 var _room_wall := 0.4                              # 瓶壁厚度（约束时减去，防穿模）
+var _room_cr := 1.0                                # 水晶碰撞球半径
 var _room_ripple := 0.0                            # 水面涟漪当前幅度（平滑跟随气泡数）
 # 调试暗门：成就页面长按左上角 7s → 对应水晶数量翻倍（日光=拼图 / 月光=战车）。
 var _toggle_press_t := -1.0                        # 左上角按住计时（<0=未按）
@@ -911,6 +912,7 @@ func _open_room() -> void:
 	_room_wall = 0.0                                            # 瓶壁厚度=0（单层壁）
 	# 水晶容纳球：内壁(R-壁厚) 再退一个水晶半径(≈0.6·disp)，中心不越界 → 网格不穿壁。
 	_room_body_r = minf(_room_R * 0.8, _room_R - _room_wall - disp * 0.6)
+	_room_cr = disp * 0.45                                       # 水晶碰撞半径
 	_room_cy = 0.0                                               # 瓶身球心=原点
 	_room_water_top = -_room_R + 0.8 * (_room_top + _room_R)     # 水到 80%
 	_room_water_r = _room_R
@@ -1202,6 +1204,9 @@ func _room_sim(delta: float) -> void:
 		entry["pos"] = pos
 		entry["vel"] = vel
 		entry["avel"] = avel
+	# 水晶两两碰撞（在墙约束之后统一解算）。
+	if _room_collide():
+		moving = true
 	# 更新气泡：上浮 + 轻微晃动 + 到水面/寿命尽消失。
 	if _bubble_mm != null:
 		var hidden := Transform3D(Basis().scaled(Vector3.ZERO), Vector3.ZERO)
@@ -1230,6 +1235,89 @@ func _room_sim(delta: float) -> void:
 			_bubble_mm.set_instance_transform(i, Transform3D(Basis().scaled(Vector3.ONE * sc), bp))
 			moving = true                              # 有气泡仍在动 → 继续模拟
 	_room_moving = moving
+
+# 水晶两两碰撞：均匀网格加速 + 冲量分离；碰撞后重新贴回瓶内。返回是否有碰撞发生。
+func _room_collide() -> bool:
+	var cr := _room_cr
+	if cr <= 0.0:
+		return false
+	var mind := cr * 2.0
+	# 收集所有实例到扁平数组。
+	var gpos := PackedVector3Array()
+	var gvel := PackedVector3Array()
+	for entry in _room_mmis:
+		var node: MultiMeshInstance3D = entry.get("node")
+		if not is_instance_valid(node):
+			continue
+		var pos: PackedVector3Array = entry.get("pos")
+		var vel: PackedVector3Array = entry.get("vel")
+		for i in pos.size():
+			gpos.append(pos[i])
+			gvel.append(vel[i])
+	var n := gpos.size()
+	if n < 2:
+		return false
+	# 均匀网格（格边=碰撞直径），只查相邻 27 格 → 近 O(n)。
+	var cell := mind
+	var grid := {}
+	for k in n:
+		var c := Vector3i(int(floor(gpos[k].x / cell)), int(floor(gpos[k].y / cell)), int(floor(gpos[k].z / cell)))
+		if not grid.has(c):
+			grid[c] = PackedInt32Array()
+		grid[c].append(k)
+	var REST := 0.3
+	var changed := false                                          # 有位置分离 → 需写回
+	var active := false                                           # 有明显靠近碰撞 → 保持模拟
+	for a in n:
+		var ca := Vector3i(int(floor(gpos[a].x / cell)), int(floor(gpos[a].y / cell)), int(floor(gpos[a].z / cell)))
+		for dx in range(-1, 2):
+			for dy in range(-1, 2):
+				for dz in range(-1, 2):
+					var cc := ca + Vector3i(dx, dy, dz)
+					if not grid.has(cc):
+						continue
+					for b in grid[cc]:
+						if b <= a:
+							continue
+						var d := gpos[b] - gpos[a]
+						var dist := d.length()
+						if dist >= mind or dist < 0.0001:
+							continue
+						var nrm := d / dist
+						var overlap := mind - dist
+						gpos[a] -= nrm * (overlap * 0.5)          # 分离重叠
+						gpos[b] += nrm * (overlap * 0.5)
+						var rv := (gvel[b] - gvel[a]).dot(nrm)
+						if rv < 0.0:                              # 相互靠近 → 交换法向动量
+							var j := -(1.0 + REST) * rv * 0.5
+							gvel[a] -= nrm * j
+							gvel[b] += nrm * j
+							if rv < -0.15:                        # 明显碰撞才唤醒模拟（静置接触不算）
+								active = true
+						changed = true
+	if not changed:
+		return false
+	# 写回各 entry 并更新 MultiMesh 变换（保留自转 basis，只改位置），顺便再夹回瓶内。
+	var k2 := 0
+	for entry in _room_mmis:
+		var node: MultiMeshInstance3D = entry.get("node")
+		if not is_instance_valid(node):
+			continue
+		var mm: MultiMesh = node.multimesh
+		var pos: PackedVector3Array = entry.get("pos")
+		var vel: PackedVector3Array = entry.get("vel")
+		for i in pos.size():
+			var p := gpos[k2]
+			if p.length() > _room_body_r:                        # 碰撞可能把它挤出球壁 → 夹回
+				p = p.normalized() * _room_body_r
+			pos[i] = p
+			vel[i] = gvel[k2]
+			var basis := mm.get_instance_transform(i).basis
+			mm.set_instance_transform(i, Transform3D(basis, p))
+			k2 += 1
+		entry["pos"] = pos
+		entry["vel"] = vel
+	return active
 
 # 相机射线是否真正打到圆瓶身球（否则瓶外背景 → 旋转，不冲击）。
 func _ray_hits_jar(pos: Vector2) -> bool:
