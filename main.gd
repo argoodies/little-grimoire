@@ -118,6 +118,9 @@ var _room_ripple := 0.0                            # 水面涟漪当前幅度（
 # 调试暗门：成就页面长按左上角 7s → 对应水晶数量翻倍（日光=拼图 / 月光=战车）。
 var _toggle_press_t := -1.0                        # 左上角按住计时（<0=未按）
 var _debug_fired := false                          # 本次长按已触发（抑制随后的日夜切换）
+# 调试暗门：成就页面长按播放键 7s → 清空全部成就。
+var _next_press_t := -1.0                          # 播放键按住计时（<0=未按）
+var _next_fired := false                           # 本次长按已触发（抑制随后的换关）
 const BUBBLE_MAX := 180                             # 气泡池容量
 var _bubble_mm: MultiMesh                           # 气泡 MultiMesh
 var _bub_pos: PackedVector3Array
@@ -313,6 +316,8 @@ func _build_toggle() -> void:
 	# 成就空间右上角：关闭按钮（进空间才显示，常驻不淡出）。
 	_room_next_btn = _make_flat_btn("res://textures/icon_play.png")
 	_room_next_btn.pressed.connect(_room_next_level)
+	_room_next_btn.button_down.connect(_on_next_down)   # 调试暗门：长按清空成就
+	_room_next_btn.button_up.connect(_on_next_up)
 	_room_next_btn.visible = false
 	_apply_glass(_room_next_btn)
 	layer.add_child(_room_next_btn)
@@ -444,6 +449,27 @@ func _debug_double_count() -> void:
 	_sfx_ding.play()                       # 反馈一声
 	_save_state()
 	if _in_room:                           # 按新数量重建瓶子（保住游戏相机）
+		var saved := _cam_saved
+		_open_room()
+		_cam_saved = saved
+
+# 调试暗门：只在成就页面开始按住播放键计时。
+func _on_next_down() -> void:
+	if _in_room:
+		_next_press_t = 0.0
+		_next_fired = false
+	else:
+		_next_press_t = -1.0
+
+func _on_next_up() -> void:
+	_next_press_t = -1.0
+
+# 长按播放键 7s 触发：清空全部成就并重建（空）瓶子。
+func _debug_clear_counts() -> void:
+	_counts.clear()
+	_sfx_ding.play()                       # 反馈一声
+	_save_state()
+	if _in_room:                           # 重建空瓶（保住游戏相机）
 		var saved := _cam_saved
 		_open_room()
 		_cam_saved = saved
@@ -1012,6 +1038,9 @@ func _close_room() -> void:
 
 # 成就空间右上角换关：退出空间并随机换一关。
 func _room_next_level() -> void:
+	if _next_fired:                        # 刚触发过长按清空 → 本次不换关
+		_next_fired = false
+		return
 	_close_room()
 	_load_random_level()
 
@@ -1760,13 +1789,20 @@ func _spray(screen_pos: Vector2) -> void:
 # ---------- 每帧 ----------
 
 func _process(delta: float) -> void:
-	# 调试暗门：成就页面长按左上角满 7s → 弹框改成就数。
+	# 调试暗门：成就页面长按左上角满 7s → 对应水晶翻倍。
 	if _toggle_press_t >= 0.0:
 		_toggle_press_t += delta
 		if _toggle_press_t >= 7.0 and not _debug_fired:
 			_debug_fired = true
 			_toggle_press_t = -1.0
 			_debug_double_count()
+	# 调试暗门：成就页面长按播放键满 7s → 清空全部成就。
+	if _next_press_t >= 0.0:
+		_next_press_t += delta
+		if _next_press_t >= 7.0 and not _next_fired:
+			_next_fired = true
+			_next_press_t = -1.0
+			_debug_clear_counts()
 	if _in_room:                              # 成就空间：自转/浮动在 shader 里跑
 		# 松手后的旋转惯性（不在拖拽时才滑行，带指数衰减）。
 		var dragging := _room_dragging or _room_touches.size() >= 1
