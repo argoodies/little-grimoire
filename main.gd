@@ -931,7 +931,7 @@ func _open_room() -> void:
 	_room_R = disp * 3.5                                         # 瓶身球半径（固定）
 	_room_neck_r = _model_room_radius("res://models/chariot.glb") * 1.1   # 细口=车柱体半径×1.1
 	_room_top = _room_R * 1.9                                    # 瓶口 y（瓶底 = -R）
-	_room_wall = 0.0                                            # 瓶壁厚度=0（单层壁）
+	_room_wall = minf(_room_R * 0.045, _room_neck_r * 0.45)     # 厚玻璃壁（化学烧瓶）
 	# 水晶容纳球：内壁(R-壁厚) 再退一个水晶半径(≈0.6·disp)，中心不越界 → 网格不穿壁。
 	_room_body_r = minf(_room_R * 0.8, _room_R - _room_wall - disp * 0.6)
 	_room_cr = disp * 0.45                                       # 水晶碰撞半径
@@ -1476,7 +1476,7 @@ void fragment() {
 """
 	return sh
 
-# 细口圆瓶母线：瓶底=-R 的球身 → 肩部收拢 → 细口直筒。
+# 化学烧瓶母线：瓶底=-R 的球身 → 肩部收拢 → 长直颈 → 顶端卷边瓶口(rolled lip)。
 func _bottle_radius(y: float) -> float:
 	var R := _room_R
 	var nr := _room_neck_r
@@ -1487,8 +1487,13 @@ func _bottle_radius(y: float) -> float:
 	elif y <= neck_start:
 		var r0 := sqrt(maxf(0.0, R * R - body_top * body_top))
 		return lerpf(r0, nr, (y - body_top) / (neck_start - body_top))   # 肩部
-	else:
-		return nr                                   # 细口
+	# 细口直筒；顶端一小段做卷边（外凸的圆珠状唇缘）。
+	var lip_h := R * 0.12                            # 卷边高度
+	var lip_lo := _room_top - lip_h
+	if y > lip_lo:
+		var t := (y - lip_lo) / lip_h               # 0→1
+		return nr + sin(t * PI) * nr * 0.55         # 外凸圆珠 → 回收，形成卷唇
+	return nr                                        # 细口
 
 # 旋转母线生成瓶面 ArrayMesh（rscale 缩放半径；y 从 -R 到 y_top；cap_top 加水面盖）。
 # wall>0：双层壁（外壁 + 内壁向内缩 wall + 口沿圈），瓶壁有厚度。
@@ -1603,13 +1608,14 @@ shader_type spatial;
 render_mode cull_disabled, blend_mix, depth_draw_never, specular_schlick_ggx;
 uniform vec3 tint : source_color = vec3(0.4, 0.6, 1.0);
 void fragment() {
-	float fres = pow(1.0 - clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0), 2.2);
+	// 硼硅玻璃：中心近乎清透、边缘强菲涅尔反光，抛光镜面。
+	float fres = pow(1.0 - clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0), 2.4);
 	ALBEDO = tint;
-	METALLIC = 0.1;
-	ROUGHNESS = 0.03;
+	METALLIC = 0.0;
+	ROUGHNESS = 0.0;                              // 抛光镜面
 	SPECULAR = 1.0;
-	EMISSION = tint * (0.05 + 0.5 * fres);
-	ALPHA = mix(0.05, 0.5, fres);                 // 中间清透、边缘更实
+	EMISSION = tint * (0.04 + 0.7 * fres);        // 边缘更亮的高光轮廓
+	ALPHA = clamp(mix(0.03, 0.62, fres), 0.0, 0.7);   // 中心更清透、边缘更实（厚壁感）
 }
 """
 	return sh
