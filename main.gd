@@ -929,14 +929,15 @@ func _open_room() -> void:
 	# 瓶身球半径固定，不随内部水晶数量变化（数量多则挤得更密）。
 	var disp := TARGET_W * TABLE_DISP
 	_room_R = disp * 3.5                                         # 瓶身球半径（固定）
-	_room_neck_r = _model_room_radius("res://models/chariot.glb") * 1.1   # 细口=车柱体半径×1.1
-	_room_top = _room_R * 1.9                                    # 瓶口 y（瓶底 = -R）
-	_room_wall = minf(_room_R * 0.045, _room_neck_r * 0.45)     # 厚玻璃壁（化学烧瓶）
-	# 水晶容纳球：内壁(R-壁厚) 再退一个水晶半径(≈0.6·disp)，中心不越界 → 网格不穿壁。
-	_room_body_r = minf(_room_R * 0.8, _room_R - _room_wall - disp * 0.6)
+	# 尺寸对齐烧瓶模型（瓶身球心 y=-0.221、半径 0.288、颈 0.098、顶 0.49，模型单位）。
+	_room_neck_r = _room_R * (0.098 / 0.288)                     # 颈半径 ≈ 0.34R
+	_room_top = _room_R * ((0.49 + 0.221) / 0.288)              # 颈口 y（模型顶对齐）
+	_room_wall = 0.0                                            # 玻璃厚度由模型自身呈现
+	# 水晶容纳球：瓶身球(R) 再退一个水晶半径(≈0.6·disp)，网格不穿壁。
+	_room_body_r = minf(_room_R * 0.8, _room_R - disp * 0.6)
 	_room_cr = disp * 0.45                                       # 水晶碰撞半径
 	_room_cy = 0.0                                               # 瓶身球心=原点
-	_room_water_top = -_room_R + 0.8 * (_room_top + _room_R)     # 水到 80%
+	_room_water_top = _room_R * 0.6                              # 水面在瓶身内（圆肚里）
 	_room_water_r = _room_R
 	_room_burst_r = _room_R * 1.15
 	_room_water_mat = null                          # 下面建水体时赋值（水面涟漪材质）
@@ -944,12 +945,16 @@ func _open_room() -> void:
 	_room_mmis.clear()
 	_room_moving = false
 
-	# 细口圆瓶（旋转体）：玻璃壳（开口）+ 内部水体（到 80%，带水面盖）。
-	var glass := MeshInstance3D.new()
-	glass.mesh = _make_bottle_surface(1.0, _room_top, false, _room_wall)
+	# 玻璃外壳：化学烧瓶模型（套透明玻璃 shader 看内部），按瓶身球心→原点、半径→R 缩放对齐。
+	var flask := (load("res://models/flask.glb") as PackedScene).instantiate()
+	var fmi := _find_mesh(flask)
 	var gmat := ShaderMaterial.new(); gmat.shader = _make_jar_shader()
-	glass.material_override = gmat
-	_room_root.add_child(glass)
+	if fmi != null:
+		fmi.material_override = gmat
+	var fs := _room_R / 0.288                                    # 缩放：模型瓶身半径 0.288 → R
+	flask.scale = Vector3(fs, fs, fs)
+	flask.position = Vector3(0.0, 0.221 * fs, 0.0)              # 抬升：瓶身球心 -0.221 → 原点
+	_room_root.add_child(flask)
 	var water := MeshInstance3D.new()
 	water.mesh = _make_bottle_surface(0.96, _room_water_top, true)
 	var wmat := ShaderMaterial.new(); wmat.shader = _make_water_still_shader()
