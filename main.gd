@@ -929,10 +929,10 @@ func _open_room() -> void:
 	# 瓶身球半径固定，不随内部水晶数量变化（数量多则挤得更密）。
 	var disp := TARGET_W * TABLE_DISP
 	_room_R = disp * 3.5                                         # 瓶身球半径（固定）
-	# 尺寸对齐烧瓶模型（瓶身球心 y=-0.221、半径 0.31、颈 0.098、顶 0.49，模型单位）。
+	# 仿照 round-bottom 烧瓶母线的程序化比例（颈≈0.32R、颈口≈2.29R、带卷唇）。
 	_room_neck_r = _room_R * (0.098 / 0.31)                      # 颈半径 ≈ 0.32R
-	_room_top = _room_R * ((0.49 + 0.221) / 0.31)              # 颈口 y（模型顶对齐）
-	_room_wall = 0.0                                            # 玻璃厚度由模型自身呈现
+	_room_top = _room_R * ((0.49 + 0.221) / 0.31)              # 颈口 y
+	_room_wall = minf(_room_R * 0.025, _room_neck_r * 0.3)     # 薄玻璃壁
 	# 水晶容纳球：瓶身球(R) 再退一个水晶半径(≈0.6·disp)，网格不穿壁。
 	_room_body_r = minf(_room_R * 0.8, _room_R - disp * 0.6)
 	_room_cr = disp * 0.45                                       # 水晶碰撞半径
@@ -946,16 +946,12 @@ func _open_room() -> void:
 	_room_mmis.clear()
 	_room_moving = false
 
-	# 玻璃外壳：化学烧瓶模型（套透明玻璃 shader 看内部），按瓶身球心→原点、半径→R 缩放对齐。
-	var flask := (load("res://models/flask.glb") as PackedScene).instantiate()
-	var fmi := _find_mesh(flask)
+	# 玻璃外壳：程序化 round-bottom 烧瓶（旋转体），透明玻璃 shader，含薄壁与卷唇。
+	var glass := MeshInstance3D.new()
+	glass.mesh = _make_bottle_surface(1.0, _room_top, false, _room_wall)
 	var gmat := ShaderMaterial.new(); gmat.shader = _make_jar_shader()
-	if fmi != null:
-		fmi.material_override = gmat
-	var fs := _room_R / 0.31                                     # 缩放：模型瓶身半径 0.31 → R
-	flask.scale = Vector3(fs, fs, fs)
-	flask.position = Vector3(0.0, 0.221 * fs, 0.0)              # 抬升：瓶身球心 -0.221 → 原点
-	_room_root.add_child(flask)
+	glass.material_override = gmat
+	_room_root.add_child(glass)
 	var water := MeshInstance3D.new()
 	water.mesh = _make_bottle_surface(0.96, _room_water_top, true)
 	var wmat := ShaderMaterial.new(); wmat.shader = _make_water_still_shader()
@@ -1482,23 +1478,25 @@ void fragment() {
 """
 	return sh
 
-# 化学烧瓶母线：瓶底=-R 的球身 → 肩部收拢 → 长直颈 → 顶端卷边瓶口(rolled lip)。
+# round-bottom 烧瓶母线：圆肚球身 → 较低处收肩 → 长直颈 → 顶端卷边瓶口(rolled lip)。
 func _bottle_radius(y: float) -> float:
 	var R := _room_R
 	var nr := _room_neck_r
-	var body_top := R * 0.94                       # 球身收口高度（接近纯球顶）
-	var neck_start := R * 1.0
+	var body_top := R * 0.70                       # 收肩起点（烧瓶肩在偏下处）
+	var neck_start := R * 1.03                      # 进入直颈
 	if y <= body_top:
-		return sqrt(maxf(0.0, R * R - y * y))       # 球身
+		return sqrt(maxf(0.0, R * R - y * y))       # 圆肚（球身）
 	elif y <= neck_start:
 		var r0 := sqrt(maxf(0.0, R * R - body_top * body_top))
-		return lerpf(r0, nr, (y - body_top) / (neck_start - body_top))   # 肩部
-	# 细口直筒；顶端一小段做卷边（外凸的圆珠状唇缘）。
-	var lip_h := R * 0.12                            # 卷边高度
+		# 平滑 S 形收肩（smoothstep），像烧瓶自然的肩线。
+		var t := (y - body_top) / (neck_start - body_top)
+		return lerpf(r0, nr, smoothstep(0.0, 1.0, t))   # 肩部
+	# 直颈；顶端一小段做卷边（外凸圆珠状唇缘）。
+	var lip_h := R * 0.32                            # 卷边高度
 	var lip_lo := _room_top - lip_h
 	if y > lip_lo:
 		var t := (y - lip_lo) / lip_h               # 0→1
-		return nr + sin(t * PI) * nr * 0.55         # 外凸圆珠 → 回收，形成卷唇
+		return nr + sin(t * PI) * nr * 0.42         # 外凸圆珠 → 回收，形成卷唇
 	return nr                                        # 细口
 
 # 旋转母线生成瓶面 ArrayMesh（rscale 缩放半径；y 从 -R 到 y_top；cap_top 加水面盖）。
