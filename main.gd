@@ -55,6 +55,7 @@ var _sfx_ding: AudioStreamPlayer
 var _sfx_click: AudioStreamPlayer
 var _sfx_whoosh: AudioStreamPlayer
 var _sfx_bubble: AudioStreamPlayer
+var _sfx_enter: AudioStreamPlayer            # 谜团音（成就完成全视之眼）
 var _last_bubble_t := -1.0                   # 冲击水泡声节流时钟
 var _godray_mat: ShaderMaterial
 var _godray_layer: CanvasLayer
@@ -245,6 +246,10 @@ func _build_audio() -> void:
 	_sfx_bubble.stream = load("res://sounds/bubble.wav")
 	_sfx_bubble.volume_db = 0.0
 	add_child(_sfx_bubble)
+	_sfx_enter = AudioStreamPlayer.new()               # 谜团音（成就完成 全视之眼）
+	_sfx_enter.stream = load("res://sounds/enter.wav")
+	_sfx_enter.volume_db = 0.0
+	add_child(_sfx_enter)
 
 func _build_environment() -> void:
 	var we := WorldEnvironment.new()
@@ -591,7 +596,7 @@ func _on_room_circle() -> void:
 	if _room_circle_lock:
 		return
 	_room_circle_lock = true
-	_sfx_reward.play()                         # 完成音乐
+	_sfx_enter.play()                          # 谜团音（非轻快完成音乐）
 	_room_circle_btn.icon = load("res://textures/icon_eye.png")   # 变全视之眼
 	_room_circle_btn.modulate.a = 1.0
 	var tw := create_tween()
