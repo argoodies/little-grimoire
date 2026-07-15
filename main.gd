@@ -868,7 +868,7 @@ func _open_room() -> void:
 	_env.background_color = Color(0.02, 0.10, 0.24)   # 深水蓝背景
 	_env.fog_enabled = true
 	_env.fog_light_color = Color(0.10, 0.32, 0.6)
-	_env.fog_density = 0.02
+	_env.fog_density = 0.002
 	# 灯光：上方俯照 + 中心补光。
 	var top := SpotLight3D.new()
 	top.position = Vector3(0, jar_h * 0.5 + 12.0, 0)
