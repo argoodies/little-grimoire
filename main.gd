@@ -89,8 +89,10 @@ var _room_yaw_vel := 0.0                         # 松手后惯性角速度（�
 var _room_pitch_vel := 0.0
 const JAR_MARGIN := 2.0                            # 瓶壁到最外水晶的余量
 const MAX_RIP := 6                                 # 同时存在的涟漪数
+const ROOM_ROT_SENS := 0.0032                      # 成就空间旋转灵敏度（比主游戏低）
 var _room_cy := 0.0                               # 相机注视点 y（瓶内水晶中心高度）
 var _room_water_mat: ShaderMaterial               # 水面材质（承载涟漪）
+var _room_waterbody_mat: ShaderMaterial           # 水体材质（水内部涟漪）
 var _room_water_r := 8.0                          # 水面半径
 var _room_water_top := 3.0                        # 水面高度
 var _room_time := 0.0                             # 涟漪时钟
@@ -821,7 +823,7 @@ func _open_room() -> void:
 	_rip_idx = 0
 	_room_rips.clear()
 	for i in MAX_RIP:
-		_room_rips.append(Vector4.ZERO)
+		_room_rips.append(Vector4(0.0, 0.0, 0.0, -1.0))   # w=start<0 → 未激活
 	# 按完成总数决定瓶子尺寸（水晶 3D 悬浮堆半径 → 瓶半径/高度）。
 	var total := 0
 	for path in MODELS:
@@ -853,8 +855,8 @@ func _open_room() -> void:
 	wm.top_radius = _room_water_r; wm.bottom_radius = _room_water_r; wm.height = wh; wm.radial_segments = 56
 	wbody.mesh = wm
 	wbody.position.y = -jar_h * 0.5 + wh * 0.5
-	var wbmat := ShaderMaterial.new(); wbmat.shader = _make_water_body_shader()
-	wbody.material_override = wbmat
+	_room_waterbody_mat = ShaderMaterial.new(); _room_waterbody_mat.shader = _make_water_body_shader()
+	wbody.material_override = _room_waterbody_mat
 	_room_root.add_child(wbody)
 	# 水面（可涟漪的圆盘）。
 	var surf := MeshInstance3D.new()
@@ -1001,24 +1003,26 @@ func _room_input(event: InputEvent) -> void:
 		if _room_dragging:
 			_room_orbit((event as InputEventMouseMotion).relative)
 
-# 点击处向水面投射，落在水面圆内则加一道涟漪（超出则夹到边缘）。
+# 点击处投射到水中一点（瓶内中心高度平面），加一道 3D 涟漪；水面与水体都会显现。
 func _room_ripple(pos: Vector2) -> void:
-	if _room_water_mat == null:
-		return
 	var from := _camera.project_ray_origin(pos)
 	var dir := _camera.project_ray_normal(pos)
 	if absf(dir.y) < 0.0001:
 		return
-	var t := (_room_water_top - from.y) / dir.y
+	var t := (_room_cy - from.y) / dir.y             # 与瓶内中心高度平面求交
 	if t < 0.0:
 		return
 	var hit := from + dir * t
 	var p := Vector2(hit.x, hit.z)
 	if p.length() > _room_water_r:
 		p = p.normalized() * _room_water_r
-	_room_rips[_rip_idx] = Vector4(p.x, p.y, _room_time, 1.0)
+	_room_rips[_rip_idx] = Vector4(p.x, _room_cy, p.y, _room_time)   # xyz=中心, w=起始时间
 	_rip_idx = (_rip_idx + 1) % MAX_RIP
-	_room_water_mat.set_shader_parameter("rips", PackedVector4Array(_room_rips))
+	var pk := PackedVector4Array(_room_rips)
+	if _room_water_mat != null:
+		_room_water_mat.set_shader_parameter("rips", pk)
+	if _room_waterbody_mat != null:
+		_room_waterbody_mat.set_shader_parameter("rips", pk)
 
 func _room_two_dist() -> float:
 	var pts := _room_touches.values()
@@ -1027,8 +1031,8 @@ func _room_two_dist() -> float:
 	return (pts[0] as Vector2).distance_to(pts[1])
 
 func _room_orbit(rel: Vector2) -> void:
-	var dyaw := -rel.x * ROT_SENS
-	var dpitch := rel.y * ROT_SENS
+	var dyaw := -rel.x * ROOM_ROT_SENS
+	var dpitch := rel.y * ROOM_ROT_SENS
 	_room_yaw += dyaw
 	_room_pitch = clampf(_room_pitch + dpitch, ELEV_MIN, ELEV_MAX)
 	var dt := maxf(get_process_delta_time(), 0.0001)
@@ -1088,24 +1092,38 @@ void fragment() {
 """
 	return sh
 
-# 水体：瓶内半透明蓝，营造充满水。
+# 水体：瓶内半透明蓝；点击处向外扩散的 3D 球面涟漪（在水里显现）。
 func _make_water_body_shader() -> Shader:
 	var sh := Shader.new()
 	sh.code = """
 shader_type spatial;
 render_mode cull_disabled, blend_mix, depth_draw_never;
 uniform vec3 wtint : source_color = vec3(0.2, 0.45, 0.9);
+uniform vec4 rips[6];      // xyz=中心, w=起始时间(<0 未激活)
+uniform float rtime = 0.0;
+varying vec3 wpos;
+void vertex() { wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
 void fragment() {
 	float fres = pow(1.0 - clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0), 2.0);
+	float rip = 0.0;
+	for (int i = 0; i < 6; i++) {
+		if (rips[i].w < 0.0) continue;
+		float t = rtime - rips[i].w;
+		if (t < 0.0 || t > 3.0) continue;
+		float dist = distance(wpos, rips[i].xyz);     // 3D 距离 → 球面壳
+		float front = t * 8.0;
+		float ring = smoothstep(1.6, 0.0, abs(dist - front));
+		rip += ring * exp(-t * 1.2);
+	}
 	ALBEDO = wtint;
 	ROUGHNESS = 0.1;
-	EMISSION = wtint * 0.12;
-	ALPHA = mix(0.18, 0.36, fres);
+	EMISSION = wtint * (0.12 + 1.2 * rip);
+	ALPHA = clamp(mix(0.18, 0.36, fres) + 0.5 * rip, 0.0, 0.85);
 }
 """
 	return sh
 
-# 水面：半透明圆盘，点击处扩散的同心涟漪。
+# 水面：半透明圆盘，点击处扩散的同心涟漪（用 3D 中心的 XZ）。
 func _make_water_surface_shader() -> Shader:
 	var sh := Shader.new()
 	sh.code = """
@@ -1113,20 +1131,20 @@ shader_type spatial;
 render_mode cull_disabled, blend_mix, depth_draw_never;
 uniform vec3 wtint : source_color = vec3(0.35, 0.6, 1.0);
 uniform float radius = 8.0;
-uniform vec4 rips[6];      // xy=中心 xz, z=起始时间, w=激活
+uniform vec4 rips[6];      // xyz=中心, w=起始时间(<0 未激活)
 uniform float rtime = 0.0;
 varying vec3 wpos;
-void vertex() { wpos = VERTEX; }
+void vertex() { wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz; }
 void fragment() {
 	float d = length(wpos.xz);
 	if (d > radius) discard;
 	float rip = 0.0;
 	for (int i = 0; i < 6; i++) {
-		if (rips[i].w < 0.5) continue;
-		float t = rtime - rips[i].z;
+		if (rips[i].w < 0.0) continue;
+		float t = rtime - rips[i].w;
 		if (t < 0.0 || t > 3.0) continue;
-		float dist = distance(wpos.xz, rips[i].xy);
-		float front = t * 7.0;                        // 波前扩散速度
+		float dist = distance(wpos.xz, rips[i].xz);
+		float front = t * 7.0;
 		float ring = smoothstep(1.2, 0.0, abs(dist - front));
 		float wave = sin(dist * 3.5 - t * 11.0);
 		rip += wave * ring * exp(-t * 1.3);
@@ -1268,6 +1286,8 @@ func _process(delta: float) -> void:
 		_room_time += delta                       # 涟漪时钟
 		if _room_water_mat != null:
 			_room_water_mat.set_shader_parameter("rtime", _room_time)
+		if _room_waterbody_mat != null:
+			_room_waterbody_mat.set_shader_parameter("rtime", _room_time)
 		if _godray_mat != null:                   # 神光光心 = 瓶内中心
 			var rvp := get_viewport().get_visible_rect().size
 			if rvp.x > 0.0 and rvp.y > 0.0:
