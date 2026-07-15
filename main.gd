@@ -112,6 +112,7 @@ var _room_R := 8.0                                 # 瓶身球半径（圆瓶）
 var _room_neck_r := 2.4                            # 细口半径
 var _room_top := 15.0                              # 瓶口 y
 var _room_body_r := 6.4                            # 水晶容纳球半径（贴瓶身内）
+var _room_wall := 0.4                              # 瓶壁厚度（约束时减去，防穿模）
 const BUBBLE_MAX := 180                             # 气泡池容量
 var _bubble_mm: MultiMesh                           # 气泡 MultiMesh
 var _bub_pos: PackedVector3Array
@@ -876,7 +877,9 @@ func _open_room() -> void:
 	_room_R = pack_r + disp * 0.7                                # 瓶身球半径
 	_room_neck_r = _model_room_radius("res://models/chariot.glb") * 1.1   # 细口=车柱体半径×1.1
 	_room_top = _room_R * 1.9                                    # 瓶口 y（瓶底 = -R）
-	_room_body_r = _room_R * 0.8                                 # 水晶容纳球
+	_room_wall = minf(_room_R * 0.05, _room_neck_r * 0.4)        # 瓶壁厚度
+	# 水晶容纳球：内壁(R-壁厚) 再退一个水晶半径(≈0.6·disp)，中心不越界 → 网格不穿壁。
+	_room_body_r = minf(_room_R * 0.8, _room_R - _room_wall - disp * 0.6)
 	_room_cy = 0.0                                               # 瓶身球心=原点
 	_room_water_top = -_room_R + 0.8 * (_room_top + _room_R)     # 水到 80%
 	_room_water_r = _room_R
@@ -888,7 +891,7 @@ func _open_room() -> void:
 
 	# 细口圆瓶（旋转体）：玻璃壳（开口）+ 内部水体（到 80%，带水面盖）。
 	var glass := MeshInstance3D.new()
-	glass.mesh = _make_bottle_surface(1.0, _room_top, false, minf(_room_R * 0.05, _room_neck_r * 0.4))
+	glass.mesh = _make_bottle_surface(1.0, _room_top, false, _room_wall)
 	var gmat := ShaderMaterial.new(); gmat.shader = _make_jar_shader()
 	glass.material_override = gmat
 	_room_root.add_child(glass)
@@ -1179,8 +1182,8 @@ func _room_sim(delta: float) -> void:
 				_bub_life[i] = 0.0
 				_bubble_mm.set_instance_transform(i, hidden)
 				continue
-			# 收进瓶身内壁（升到细口时被漏斗状收拢）。
-			var lim := _bottle_radius(bp.y) * 0.85
+			# 收进瓶身内壁（内壁=外半径-壁厚，再退一个气泡半径 → 不穿壁；细口处漏斗收拢）。
+			var lim := maxf(0.0, _bottle_radius(bp.y) - _room_wall - _bub_r[i])
 			var bxz := Vector2(bp.x, bp.z)
 			if bxz.length() > lim:
 				bxz = bxz.normalized() * lim
