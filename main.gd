@@ -78,6 +78,8 @@ var _room_yaw := 0.0
 var _room_pitch := 0.15
 var _room_dist := 14.0                          # 相机到空间中心的距离（随规模自适应）
 var _room_dragging := false
+var _room_touches: Dictionary = {}              # 空间内多点触摸（拖拽=旋转，双指=缩放）
+var _room_pinch := 0.0                           # 上一帧双指间距
 var _cam_saved := Transform3D.IDENTITY
 var _counts: Dictionary = {}                  # 模型 path -> 完成(交付)次数
 var _centered_cache: Dictionary = {}          # path -> 居中归一化后的 ArrayMesh 缓存
@@ -787,24 +789,28 @@ func _open_room() -> void:
 	if _map_btn != null:
 		_map_btn.visible = true                   # 保留地图按钮作返回（再点退出）
 		_map_btn.modulate.a = 1.0
-	if _godray_layer != null:
-		_godray_layer.visible = false             # 空间里关掉神光，避免多水晶叠加发疯 + 省性能
+	# 神光保留开启（下面 _process 里把光心设到空间中心）。
 	_cam_saved = _camera.transform
 	_room_yaw = 0.0
 	_room_pitch = 0.15
 	_room_dragging = false
+	_room_touches.clear()
 	if _room_root != null and is_instance_valid(_room_root):
 		_room_root.queue_free()
 	_room_root = Node3D.new()
 	add_child(_room_root)
-	# 环境补光（空间里没有主水晶内光了）。
+	# 灯光：一盏中心内光把整团水晶从里点亮 + 主光 + 补光 + 顶光。
+	var core := OmniLight3D.new()
+	core.position = Vector3.ZERO; core.light_energy = 3.0; core.omni_range = 60.0
+	core.light_color = Color(0.5, 0.72, 1.0); core.shadow_enabled = false
+	_room_root.add_child(core)
 	var key := OmniLight3D.new()
-	key.position = Vector3(0, 6, 8); key.light_energy = 2.2; key.omni_range = 40.0
-	key.light_color = Color(0.7, 0.85, 1.0); key.shadow_enabled = false
+	key.position = Vector3(0, 8, 12); key.light_energy = 3.2; key.omni_range = 80.0
+	key.light_color = Color(0.8, 0.9, 1.0); key.shadow_enabled = false
 	_room_root.add_child(key)
 	var fill := OmniLight3D.new()
-	fill.position = Vector3(-6, -4, -6); fill.light_energy = 1.2; fill.omni_range = 40.0
-	fill.light_color = Color(0.4, 0.5, 0.9); fill.shadow_enabled = false
+	fill.position = Vector3(-10, -6, -8); fill.light_energy = 1.8; fill.omni_range = 80.0
+	fill.light_color = Color(0.45, 0.55, 0.95); fill.shadow_enabled = false
 	_room_root.add_child(fill)
 	# 每种"完成过"的模型 → 一个 MultiMeshInstance3D，实例数=完成次数。
 	var seed_i := 0
@@ -829,11 +835,10 @@ func _close_room() -> void:
 	_world.visible = true
 	_spray_fx.visible = true
 	_toggle_btn.visible = true
-	if _godray_layer != null:
-		_godray_layer.visible = true
 	_apply_bottom_state()
 	_camera.transform = _cam_saved
 	_touches.clear()
+	_room_touches.clear()
 
 # 归一化+居中后的 ArrayMesh（顶点减去中心、乘缩放），供 MultiMesh 复用；结果缓存。
 func _centered_mesh(path: String) -> ArrayMesh:
@@ -892,16 +897,50 @@ func _update_room_cam() -> void:
 	_camera.transform = Transform3D(Basis.IDENTITY, pos)
 	_camera.look_at(Vector3.ZERO, Vector3.UP)
 
-# 成就空间内触摸：拖拽旋转整个空间的视角。
+# 成就空间内触摸：单指拖拽旋转视角，双指捏合缩放；鼠标滚轮也可缩放。
 func _room_input(event: InputEvent) -> void:
-	if event is InputEventScreenTouch or event is InputEventMouseButton:
-		_room_dragging = event.pressed
-	elif event is InputEventScreenDrag or event is InputEventMouseMotion:
+	if event is InputEventScreenTouch:
+		if event.pressed:
+			_room_touches[event.index] = event.position
+		else:
+			_room_touches.erase(event.index)
+		if _room_touches.size() == 2:
+			_room_pinch = _room_two_dist()
+	elif event is InputEventScreenDrag:
+		if _room_touches.has(event.index):
+			_room_touches[event.index] = event.position
+		if _room_touches.size() == 1:
+			_room_orbit(event.relative)
+		elif _room_touches.size() == 2:
+			var d := _room_two_dist()
+			if _room_pinch > 0.0:
+				_room_zoom(d - _room_pinch)       # 张开=拉近，收拢=拉远
+			_room_pinch = d
+	elif event is InputEventMouseButton:
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			_room_dragging = event.pressed
+		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
+			_room_zoom(40.0)
+		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
+			_room_zoom(-40.0)
+	elif event is InputEventMouseMotion:
 		if _room_dragging:
-			var rel: Vector2 = event.relative if event is InputEventScreenDrag else (event as InputEventMouseMotion).relative
-			_room_yaw -= rel.x * ROT_SENS
-			_room_pitch = clampf(_room_pitch + rel.y * ROT_SENS, -1.35, 1.35)
-			_update_room_cam()
+			_room_orbit((event as InputEventMouseMotion).relative)
+
+func _room_two_dist() -> float:
+	var pts := _room_touches.values()
+	if pts.size() < 2:
+		return 0.0
+	return (pts[0] as Vector2).distance_to(pts[1])
+
+func _room_orbit(rel: Vector2) -> void:
+	_room_yaw -= rel.x * ROT_SENS
+	_room_pitch = clampf(_room_pitch + rel.y * ROT_SENS, -1.35, 1.35)
+	_update_room_cam()
+
+func _room_zoom(delta_px: float) -> void:
+	_room_dist = clampf(_room_dist - delta_px * 0.03, 4.0, 60.0)   # 拉近/拉远
+	_update_room_cam()
 
 # 不透明"成就水晶"材质：顶点着色器做每实例自转 + 上下浮动（零 CPU），
 # 写深度 → 硬件早 Z 天然做遮挡剔除，避免透明叠加与排序开销。
@@ -1019,7 +1058,11 @@ func _spray(screen_pos: Vector2) -> void:
 # ---------- 每帧 ----------
 
 func _process(delta: float) -> void:
-	if _in_room:                              # 成就空间：自转/浮动在 shader 里跑，这里空转
+	if _in_room:                              # 成就空间：自转/浮动在 shader 里跑；只更新神光光心
+		if _godray_mat != null:
+			var rvp := get_viewport().get_visible_rect().size
+			if rvp.x > 0.0 and rvp.y > 0.0:
+				_godray_mat.set_shader_parameter("light_uv", _camera.unproject_position(Vector3.ZERO) / rvp)
 		return
 	if _spinning:
 		return                                # 旋转 4 周动画期间由 tween 接管
