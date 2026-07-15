@@ -887,7 +887,7 @@ func _open_room() -> void:
 
 	# 细口圆瓶（旋转体）：玻璃壳（开口）+ 内部水体（到 80%，带水面盖）。
 	var glass := MeshInstance3D.new()
-	glass.mesh = _make_bottle_surface(1.0, _room_top, false)
+	glass.mesh = _make_bottle_surface(1.0, _room_top, false, minf(_room_R * 0.05, _room_neck_r * 0.4))
 	var gmat := ShaderMaterial.new(); gmat.shader = _make_jar_shader()
 	glass.material_override = gmat
 	_room_root.add_child(glass)
@@ -1339,12 +1339,14 @@ func _bottle_radius(y: float) -> float:
 		return nr                                   # 细口
 
 # 旋转母线生成瓶面 ArrayMesh（rscale 缩放半径；y 从 -R 到 y_top；cap_top 加水面盖）。
-func _make_bottle_surface(rscale: float, y_top: float, cap_top: bool) -> ArrayMesh:
+# wall>0：双层壁（外壁 + 内壁向内缩 wall + 口沿圈），瓶壁有厚度。
+func _make_bottle_surface(rscale: float, y_top: float, cap_top: bool, wall := 0.0) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var SEG := 48
 	var RN := 72
 	var y0 := -_room_R
+	# 外壁
 	for j in RN + 1:
 		var y := lerpf(y0, y_top, float(j) / float(RN))
 		var r := _bottle_radius(y) * rscale
@@ -1360,7 +1362,44 @@ func _make_bottle_surface(rscale: float, y_top: float, cap_top: bool) -> ArrayMe
 			var i3 := i2 + 1
 			st.add_index(i0); st.add_index(i2); st.add_index(i1)
 			st.add_index(i1); st.add_index(i2); st.add_index(i3)
-	if cap_top:
+	if wall > 0.0:
+		# 内壁（半径向内缩 wall，绕序翻转 → 法线朝内）。
+		var inner_base := (RN + 1) * (SEG + 1)
+		for j in RN + 1:
+			var y := lerpf(y0, y_top, float(j) / float(RN))
+			var r := maxf(0.0, _bottle_radius(y) * rscale - wall)
+			for a in SEG + 1:
+				var ang := TAU * float(a) / float(SEG)
+				st.set_uv(Vector2(float(a) / float(SEG), float(j) / float(RN)))
+				st.add_vertex(Vector3(r * cos(ang), y, r * sin(ang)))
+		for j in RN:
+			for a in SEG:
+				var i0 := inner_base + j * (SEG + 1) + a
+				var i1 := i0 + 1
+				var i2 := i0 + (SEG + 1)
+				var i3 := i2 + 1
+				st.add_index(i0); st.add_index(i1); st.add_index(i2)
+				st.add_index(i1); st.add_index(i3); st.add_index(i2)
+		# 口沿圈：把外壁顶缘和内壁顶缘连成环（瓶口可见厚度）。
+		var ot := _bottle_radius(y_top) * rscale
+		var it := maxf(0.0, ot - wall)
+		var rim := (RN + 1) * (SEG + 1) * 2
+		for a in SEG + 1:
+			var ang := TAU * float(a) / float(SEG)
+			st.set_uv(Vector2(float(a) / float(SEG), 1.0))
+			st.add_vertex(Vector3(ot * cos(ang), y_top, ot * sin(ang)))
+		for a in SEG + 1:
+			var ang := TAU * float(a) / float(SEG)
+			st.set_uv(Vector2(float(a) / float(SEG), 0.98))
+			st.add_vertex(Vector3(it * cos(ang), y_top, it * sin(ang)))
+		for a in SEG:
+			var o0 := rim + a
+			var o1 := o0 + 1
+			var n0 := rim + (SEG + 1) + a
+			var n1 := n0 + 1
+			st.add_index(o0); st.add_index(n0); st.add_index(o1)
+			st.add_index(o1); st.add_index(n0); st.add_index(n1)
+	if cap_top:                                    # 仅水面用（wall=0）
 		var rt := _bottle_radius(y_top) * rscale
 		var base := (RN + 1) * (SEG + 1)
 		st.set_uv(Vector2(0.5, 1.0)); st.add_vertex(Vector3(0.0, y_top, 0.0))   # 中心
