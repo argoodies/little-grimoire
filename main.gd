@@ -81,6 +81,16 @@ var _room_yaw := 0.0                               # 绕竖直轴方位角
 var _room_yaw_vel := 0.0                           # 方位角惯性（弧度/秒）
 var _map_btn: Button
 var _room_next_btn: Button                          # 成就空间右上角换关（常驻）
+# 成就挑战进度：底部进度条 x/目标；达标出完成圆圈 → 完成音乐 → 视频 → 进下一挑战。
+const CHALLENGE_TARGETS := [10, 30]                 # 挑战 1=10、挑战 2=30（水晶总数）
+var _challenge := 1                                 # 当前挑战关（1..）
+var _room_prog: ProgressBar
+var _room_prog_label: Label
+var _room_circle_btn: Button                        # 成就空间底部完成圆圈
+var _room_circle_shown := false                     # 圆圈已出现（"叮"只响一次）
+var _room_circle_lock := false                      # 完成动画期间锁定
+var _video_layer: CanvasLayer
+var _video_player: VideoStreamPlayer
 var _in_room := false
 var _room_root: Node3D                        # 成就空间根
 var _room_dist := 30.0                          # 相机到注视点距离（随规模自适应）
@@ -145,6 +155,8 @@ func _ready() -> void:
 	_load_prefs()                             # 只读 日/夜 + 已解锁（不保存半程进度）
 	_build_godrays()
 	_build_toggle()
+	_build_room_progress_ui()
+	_build_video_player()
 	if _night:
 		_apply_lighting(false)
 	# 每次启动都是一个新的未完成水晶。
@@ -156,7 +168,7 @@ func _ready() -> void:
 func _save_state() -> void:
 	var f := FileAccess.open(SAVE_STATE, FileAccess.WRITE)
 	if f != null:
-		f.store_string(JSON.stringify({"night": _night, "counts": _counts}))
+		f.store_string(JSON.stringify({"night": _night, "counts": _counts, "challenge": _challenge}))
 		f.close()
 
 func _load_prefs() -> void:
@@ -165,6 +177,7 @@ func _load_prefs() -> void:
 	var cfg = JSON.parse_string(FileAccess.get_file_as_string(SAVE_STATE))
 	if cfg is Dictionary:
 		_night = bool(cfg.get("night", false))
+		_challenge = maxi(1, int(cfg.get("challenge", 1)))
 		var cnt = cfg.get("counts", {})
 		if cnt is Dictionary:
 			for p in cnt:
@@ -473,6 +486,161 @@ func _debug_clear_counts() -> void:
 		var saved := _cam_saved
 		_open_room()
 		_cam_saved = saved
+
+# ---------- 成就挑战：进度条 / 完成圆圈 / 视频 ----------
+
+func _build_room_progress_ui() -> void:
+	var layer := CanvasLayer.new()
+	layer.layer = 1
+	add_child(layer)
+	# 底部完成圆圈（达标出现，点击完成）。
+	_room_circle_btn = _make_flat_btn("res://textures/icon_circle.png")
+	_room_circle_btn.pressed.connect(_on_room_circle)
+	_room_circle_btn.visible = false
+	var cb := 170.0
+	_room_circle_btn.anchor_left = 0.5; _room_circle_btn.anchor_right = 0.5
+	_room_circle_btn.anchor_top = 1.0; _room_circle_btn.anchor_bottom = 1.0
+	_room_circle_btn.offset_left = -cb * 0.5; _room_circle_btn.offset_right = cb * 0.5
+	_room_circle_btn.offset_bottom = -150.0; _room_circle_btn.offset_top = -150.0 - cb
+	layer.add_child(_room_circle_btn)
+	# 进度条 + x/目标 文本，底部中央。
+	_room_prog = ProgressBar.new()
+	_room_prog.show_percentage = false
+	_room_prog.min_value = 0
+	_room_prog.visible = false
+	var bg := StyleBoxFlat.new(); bg.bg_color = Color(1, 1, 1, 0.12); bg.set_corner_radius_all(15)
+	var fg := StyleBoxFlat.new(); fg.bg_color = Color(0.5, 0.75, 1.0, 0.92); fg.set_corner_radius_all(15)
+	_room_prog.add_theme_stylebox_override("background", bg)
+	_room_prog.add_theme_stylebox_override("fill", fg)
+	_room_prog.anchor_left = 0.18; _room_prog.anchor_right = 0.82
+	_room_prog.anchor_top = 1.0; _room_prog.anchor_bottom = 1.0
+	_room_prog.offset_left = 0; _room_prog.offset_right = 0
+	_room_prog.offset_top = -120.0; _room_prog.offset_bottom = -90.0
+	layer.add_child(_room_prog)
+	_room_prog_label = Label.new()
+	_room_prog_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_room_prog_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_room_prog_label.add_theme_font_size_override("font_size", 30)
+	_room_prog_label.visible = false
+	_room_prog_label.anchor_left = 0.18; _room_prog_label.anchor_right = 0.82
+	_room_prog_label.anchor_top = 1.0; _room_prog_label.anchor_bottom = 1.0
+	_room_prog_label.offset_left = 0; _room_prog_label.offset_right = 0
+	_room_prog_label.offset_top = -122.0; _room_prog_label.offset_bottom = -88.0
+	layer.add_child(_room_prog_label)
+
+func _build_video_player() -> void:
+	_video_layer = CanvasLayer.new()
+	_video_layer.layer = 3                     # 视频最上层
+	_video_layer.visible = false
+	add_child(_video_layer)
+	var bg := ColorRect.new()                  # 黑底 + 挡住下方输入（点一下可跳过）
+	bg.color = Color(0, 0, 0, 1)
+	bg.set_anchors_preset(Control.PRESET_FULL_RECT)
+	bg.mouse_filter = Control.MOUSE_FILTER_STOP
+	bg.gui_input.connect(_on_video_input)
+	_video_layer.add_child(bg)
+	_video_player = VideoStreamPlayer.new()
+	_video_player.expand = true
+	_video_player.loop = false
+	_video_player.finished.connect(_on_video_finished)
+	_video_layer.add_child(_video_player)
+
+func _challenge_target() -> int:
+	return int(CHALLENGE_TARGETS[mini(_challenge - 1, CHALLENGE_TARGETS.size() - 1)])
+
+func _total_crystals() -> int:
+	var t := 0
+	for k in _counts:
+		t += int(_counts[k])
+	return t
+
+func _show_room_progress(on: bool) -> void:
+	if _room_prog != null:
+		_room_prog.visible = on
+		_room_prog_label.visible = on
+	if not on and _room_circle_btn != null:
+		_room_circle_btn.visible = false
+
+func _update_room_progress() -> void:
+	if _room_prog == null:
+		return
+	var target := _challenge_target()
+	var total := _total_crystals()
+	_room_prog.max_value = target
+	_room_prog.value = mini(total, target)
+	_room_prog_label.text = "%d/%d" % [total, target]
+	if _room_circle_lock:
+		return
+	if total >= target:                        # 达标 → 出现完成圆圈（"叮"一次）
+		if not _room_circle_shown:
+			_room_circle_shown = true
+			_room_circle_btn.icon = load("res://textures/icon_circle.png")
+			_room_circle_btn.disabled = false
+			_room_circle_btn.modulate.a = 0.0
+			_room_circle_btn.visible = true
+			create_tween().tween_property(_room_circle_btn, "modulate:a", 1.0, 0.3)
+			_sfx_ding.play()                   # 可完成提示音
+	else:
+		_room_circle_shown = false
+		_room_circle_btn.visible = false
+
+# 点击完成圆圈 → 完成音乐 + 变对勾 → 播放挑战视频 → 进下一挑战。
+func _on_room_circle() -> void:
+	if _room_circle_lock:
+		return
+	_room_circle_lock = true
+	_sfx_reward.play()                         # 完成音乐
+	_room_circle_btn.icon = load("res://textures/icon_check.png")   # 变对勾
+	_room_circle_btn.modulate.a = 1.0
+	var tw := create_tween()
+	tw.tween_interval(0.9)
+	tw.tween_callback(_play_challenge_video)
+
+func _play_challenge_video() -> void:
+	if _video_player == null:
+		_finish_challenge(); return
+	_room_circle_btn.visible = false
+	var vs := load("res://video/challenge1.ogv")
+	if vs == null:
+		_finish_challenge(); return
+	_video_player.stream = vs
+	# 保持视频宽高比、居中适配屏幕。
+	var vp := get_viewport().get_visible_rect().size
+	var va := 540.0 / 838.0
+	var w := vp.x
+	var h := w / va
+	if h > vp.y:
+		h = vp.y; w = h * va
+	_video_player.anchor_left = 0.5; _video_player.anchor_right = 0.5
+	_video_player.anchor_top = 0.5; _video_player.anchor_bottom = 0.5
+	_video_player.offset_left = -w * 0.5; _video_player.offset_right = w * 0.5
+	_video_player.offset_top = -h * 0.5; _video_player.offset_bottom = h * 0.5
+	_video_layer.visible = true
+	_video_player.play()
+
+func _on_video_input(event: InputEvent) -> void:
+	# 视频播放中点一下 → 跳过。
+	if _video_layer.visible and event is InputEventScreenTouch and event.pressed:
+		_on_video_finished()
+	elif _video_layer.visible and event is InputEventMouseButton and event.pressed:
+		_on_video_finished()
+
+func _on_video_finished() -> void:
+	if not _video_layer.visible:
+		return
+	_video_player.stop()
+	_video_layer.visible = false
+	_finish_challenge()
+
+func _finish_challenge() -> void:
+	if _challenge < CHALLENGE_TARGETS.size():
+		_challenge += 1                        # 进入下一挑战（如 x/30）
+	_room_circle_lock = false
+	_room_circle_shown = false
+	if _room_circle_btn != null:
+		_room_circle_btn.visible = false
+	_save_state()
+	_update_room_progress()
 
 func _apply_lighting(animate: bool) -> void:
 	var dir_c := Color(0.62, 0.74, 1.0) if _night else Color(1.0, 0.94, 0.85)
@@ -909,6 +1077,10 @@ func _open_room() -> void:
 	if _room_next_btn != null:
 		_room_next_btn.visible = true                 # 右上角换关：常驻
 		_room_next_btn.modulate.a = 1.0
+	_room_circle_lock = false
+	_room_circle_shown = false
+	_show_room_progress(true)                         # 底部进度条 + 达标圆圈
+	_update_room_progress()
 	# 神光保留开启（下面 _process 里把光心设到空间中心）。
 	_cam_saved = _camera.transform
 	_room_yaw = 0.0
@@ -1025,6 +1197,7 @@ func _close_room() -> void:
 	_in_room = false
 	if _room_next_btn != null:
 		_room_next_btn.visible = false
+	_show_room_progress(false)                        # 隐藏进度条 + 完成圆圈
 	if _room_root != null and is_instance_valid(_room_root):
 		_room_root.queue_free()
 		_room_root = null
