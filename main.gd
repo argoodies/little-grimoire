@@ -1037,15 +1037,8 @@ func _room_two_dist() -> float:
 		return 0.0
 	return (pts[0] as Vector2).distance_to(pts[1])
 
-func _room_orbit(rel: Vector2) -> void:
-	var dyaw := -rel.x * ROT_SENS
-	var dpitch := rel.y * ROT_SENS
-	_room_yaw += dyaw
-	_room_pitch = clampf(_room_pitch + dpitch, ELEV_MIN, ELEV_MAX)   # 仰角受限，桌板俯视≤30°倾斜
-	var dt := maxf(get_process_delta_time(), 0.0001)
-	_room_yaw_vel = dyaw / dt                                        # 记录角速度供松手惯性
-	_room_pitch_vel = dpitch / dt
-	_update_room_cam()
+func _room_orbit(_rel: Vector2) -> void:
+	pass                                                            # 视角固定，不旋转
 
 func _room_zoom(delta_px: float) -> void:
 	_room_dist = clampf(_room_dist - delta_px * 0.03, 4.0, 60.0)   # 拉近/拉远
@@ -1092,12 +1085,13 @@ void vertex() { wpos = VERTEX; }        // PlaneMesh 在原点无缩放 → 局�
 void fragment() {
 	float d = length(wpos.xz);
 	float fade = smoothstep(board * 0.5, board * 0.30, d);  // 边缘淡出
+	float fres = pow(1.0 - clamp(dot(normalize(NORMAL), normalize(VIEW)), 0.0, 1.0), 2.5);
 	ALBEDO = tint;
-	METALLIC = 0.2;
-	ROUGHNESS = 0.06;
+	METALLIC = 0.3;
+	ROUGHNESS = 0.05;
 	SPECULAR = 0.9;
-	EMISSION = tint * 0.18;                        // 淡淡内发光
-	ALPHA = 0.22 * fade;                           // 半透明水晶
+	EMISSION = tint * (0.25 + 0.8 * fres);         // 水晶色 + 边缘辉光
+	ALPHA = clamp(0.7 * fade, 0.0, 1.0);           // 更实的水晶（不再几乎全透）
 }
 """
 	return sh
