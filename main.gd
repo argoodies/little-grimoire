@@ -76,7 +76,7 @@ const TABLE_SPACING := 2.6                      # 桌面上模型的密堆积间
 const TABLE_DISP := 0.55                        # 模型在桌上的显示缩放（相对 TARGET_W）
 const BOARD_LEN := 40.0                         # 桌板长边（约拼图的 20 倍，拼图桌上显示 ~2 单位）
 const ROOM_CENTER_Y := 2.0                      # 相机注视点高度（桌面之上）
-const ROOM_ELEV := 0.42                            # 固定俯角（略俯视，露出远端瓶口）
+const ROOM_ELEV := 0.5236                           # 固定俯角 30°（露出远端瓶口）
 var _room_yaw := 0.0                               # 绕竖直轴方位角
 var _room_yaw_vel := 0.0                           # 方位角惯性（弧度/秒）
 var _map_btn: Button
