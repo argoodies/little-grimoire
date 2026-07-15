@@ -1299,7 +1299,7 @@ void fragment() {
 func _bottle_radius(y: float) -> float:
 	var R := _room_R
 	var nr := _room_neck_r
-	var body_top := R * 0.72                       # 球身收口高度
+	var body_top := R * 0.94                       # 球身收口高度（接近纯球顶）
 	var neck_start := R * 1.0
 	if y <= body_top:
 		return sqrt(maxf(0.0, R * R - y * y))       # 球身
