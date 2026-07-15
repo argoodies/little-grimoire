@@ -72,7 +72,7 @@ var _toggle_btn: Button
 const ROOM_CAP := 200                          # 每种模型最多实例数（性能上限）
 const TABLE_SPACING := 2.6                      # 桌面上模型的密堆积间距
 const TABLE_DISP := 0.55                        # 模型在桌上的显示缩放（相对 TARGET_W）
-const BOARD_LEN := 200.0                        # 桌板长边（约模型的 100 倍）
+const BOARD_LEN := 40.0                         # 桌板长边（约拼图的 20 倍，拼图桌上显示 ~2 单位）
 const ROOM_CENTER_Y := 2.0                      # 相机注视点高度（桌面之上）
 const ELEV_MIN := 1.047                         # 相机仰角下限 60°（桌板倾斜≤30°）
 const ELEV_MAX := 1.536                         # 相机仰角上限 ~88°（近俯视）
