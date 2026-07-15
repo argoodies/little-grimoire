@@ -69,20 +69,26 @@ var _night := false
 var _toggle_btn: Button
 
 # ---------- 成就空间（完成过的模型按次数漂浮展示）----------
-const ROOM_CAP := 120                         # 每种模型最多实例数（性能上限）
-const ROOM_SPACING := 1.5                      # 实例密堆积间距（越大越松）
+const ROOM_CAP := 200                          # 每种模型最多实例数（性能上限）
+const TABLE_SPACING := 2.6                      # 桌面上模型的密堆积间距
+const TABLE_DISP := 0.55                        # 模型在桌上的显示缩放（相对 TARGET_W）
+const BOARD_LEN := 200.0                        # 桌板长边（约模型的 100 倍）
+const ROOM_CENTER_Y := 2.0                      # 相机注视点高度（桌面之上）
+const ELEV_MIN := 1.047                         # 相机仰角下限 60°（桌板倾斜≤30°）
+const ELEV_MAX := 1.536                         # 相机仰角上限 ~88°（近俯视）
 var _map_btn: Button
 var _in_room := false
-var _room_root: Node3D                        # 成就空间根（每种模型一个 MultiMeshInstance3D）
+var _room_root: Node3D                        # 成就空间根
 var _room_yaw := 0.0
-var _room_pitch := 0.15
-var _room_dist := 14.0                          # 相机到空间中心的距离（随规模自适应）
+var _room_pitch := 1.22                          # 相机仰角(弧度)，默认 ~70°
+var _room_dist := 30.0                          # 相机到注视点距离（随规模自适应）
 var _room_dragging := false
 var _room_touches: Dictionary = {}              # 空间内多点触摸（拖拽=旋转，双指=缩放）
 var _room_pinch := 0.0                           # 上一帧双指间距
 var _cam_saved := Transform3D.IDENTITY
 var _counts: Dictionary = {}                  # 模型 path -> 完成(交付)次数
 var _centered_cache: Dictionary = {}          # path -> 居中归一化后的 ArrayMesh 缓存
+var _centered_h: Dictionary = {}              # path -> 归一化后 Y 半高（用于贴桌面）
 
 func _ready() -> void:
 	randomize()
@@ -792,27 +798,34 @@ func _open_room() -> void:
 	# 神光保留开启（下面 _process 里把光心设到空间中心）。
 	_cam_saved = _camera.transform
 	_room_yaw = 0.0
-	_room_pitch = 0.15
+	_room_pitch = 1.22
 	_room_dragging = false
 	_room_touches.clear()
 	if _room_root != null and is_instance_valid(_room_root):
 		_room_root.queue_free()
 	_room_root = Node3D.new()
 	add_child(_room_root)
-	# 灯光：一盏中心内光把整团水晶从里点亮 + 主光 + 补光 + 顶光。
-	var core := OmniLight3D.new()
-	core.position = Vector3.ZERO; core.light_energy = 3.0; core.omni_range = 60.0
-	core.light_color = Color(0.5, 0.72, 1.0); core.shadow_enabled = false
-	_room_root.add_child(core)
-	var key := OmniLight3D.new()
-	key.position = Vector3(0, 8, 12); key.light_energy = 3.2; key.omni_range = 80.0
-	key.light_color = Color(0.8, 0.9, 1.0); key.shadow_enabled = false
-	_room_root.add_child(key)
+	# 大桌板（木质），平面朝上，顶面对齐 y=0，模型都放在上面。
+	var plank := (load("res://models/plank.glb") as PackedScene).instantiate()
+	var pm := _find_mesh(plank)
+	if pm != null:
+		var pab := pm.get_aabb()
+		var s := BOARD_LEN / maxf(pab.size.x, pab.size.z)      # 按长边放大到 BOARD_LEN
+		plank.scale = Vector3(s, s, s)
+		plank.position = Vector3(0, -(pab.position.y + pab.size.y) * s, 0)   # 顶面到 y=0
+	_room_root.add_child(plank)
+	# 桌板正上方一盏聚光把整桌打亮 + 一点冷色补光。
+	var top := SpotLight3D.new()
+	top.position = Vector3(0, 55, 6)
+	top.rotation = Vector3(-PI * 0.5, 0, 0)                     # 朝下
+	top.light_energy = 8.0; top.spot_range = 140.0; top.spot_angle = 55.0
+	top.light_color = Color(1.0, 0.96, 0.9); top.shadow_enabled = false
+	_room_root.add_child(top)
 	var fill := OmniLight3D.new()
-	fill.position = Vector3(-10, -6, -8); fill.light_energy = 1.8; fill.omni_range = 80.0
-	fill.light_color = Color(0.45, 0.55, 0.95); fill.shadow_enabled = false
+	fill.position = Vector3(-20, 14, -16); fill.light_energy = 1.6; fill.omni_range = 120.0
+	fill.light_color = Color(0.55, 0.65, 1.0); fill.shadow_enabled = false
 	_room_root.add_child(fill)
-	# 每种"完成过"的模型 → 一个 MultiMeshInstance3D，实例数=完成次数。
+	# 每种"完成过"的模型 → 一个 MultiMeshInstance3D，平铺在桌面上。
 	var seed_i := 0
 	var max_n := 1
 	for path in MODELS:
@@ -822,9 +835,9 @@ func _open_room() -> void:
 		_room_root.add_child(_build_room_multimesh(path, cnt, seed_i))
 		max_n = maxi(max_n, cnt)
 		seed_i += 1
-	# 相机距离随最大堆半径自适应（小规模也不至于太远）。
-	var cluster_r := ROOM_SPACING * pow(float(max_n), 1.0 / 3.0)
-	_room_dist = clampf(cluster_r * 2.6 + 3.0, 9.0, 44.0)
+	# 相机距离随桌面上堆的半径自适应。
+	var cluster_r := TABLE_SPACING * sqrt(float(max_n))
+	_room_dist = clampf(cluster_r * 2.0 + 12.0, 16.0, 110.0)
 	_update_room_cam()
 
 func _close_room() -> void:
@@ -840,17 +853,19 @@ func _close_room() -> void:
 	_touches.clear()
 	_room_touches.clear()
 
-# 归一化+居中后的 ArrayMesh（顶点减去中心、乘缩放），供 MultiMesh 复用；结果缓存。
+# 归一化+居中后的 ArrayMesh（顶点减去中心、乘缩放），供 MultiMesh 复用；同时缓存半高。
 func _centered_mesh(path: String) -> ArrayMesh:
 	if _centered_cache.has(path):
 		return _centered_cache[path]
 	var scene := (load(path) as PackedScene).instantiate()
 	var m := _find_mesh(scene)
 	var out := ArrayMesh.new()
+	var halfy := TARGET_W * 0.5
 	if m != null and m.mesh != null:
 		var ab := m.get_aabb()
 		var ext: float = maxf(ab.size.x, maxf(ab.size.y, ab.size.z))
 		var sc := TARGET_W / maxf(ext, 0.0001)
+		halfy = ab.size.y * sc * 0.5                 # 归一化后 Y 半高
 		var center := ab.get_center()
 		var arrays := m.mesh.surface_get_arrays(0)
 		var verts: PackedVector3Array = arrays[Mesh.ARRAY_VERTEX]
@@ -861,6 +876,7 @@ func _centered_mesh(path: String) -> ArrayMesh:
 		out.add_surface_from_arrays(Mesh.PRIMITIVE_TRIANGLES, arrays)
 	scene.queue_free()
 	_centered_cache[path] = out
+	_centered_h[path] = halfy
 	return out
 
 func _build_room_multimesh(path: String, count: int, seed_i: int) -> MultiMeshInstance3D:
@@ -868,21 +884,18 @@ func _build_room_multimesh(path: String, count: int, seed_i: int) -> MultiMeshIn
 	mm.transform_format = MultiMesh.TRANSFORM_3D
 	mm.mesh = _centered_mesh(path)
 	mm.instance_count = count
+	var lift: float = float(_centered_h.get(path, TARGET_W * 0.5)) * TABLE_DISP   # 底面贴桌面
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(hash(path)) + seed_i * 7919
 	var GA := 2.3999632                          # 黄金角
 	for i in count:
-		# 中心向外的确定性密堆积：半径按索引立方根增长（体积密度恒定，中心先满、数量增才外扩），
-		# 方向用黄金角螺旋铺满球面；每种模型加相位偏移以交错不重叠。
+		# 桌面上的中心向外密堆积（2D 向日葵螺旋：中心先满、数量增才向外扩）。
 		var idx := float(i) + 0.5
-		var r := ROOM_SPACING * pow(idx, 1.0 / 3.0)
-		var y := 1.0 - 2.0 * fposmod(idx * 0.618034 + float(seed_i) * 0.5, 1.0)
-		var rxy := sqrt(maxf(0.0, 1.0 - y * y))
+		var r := TABLE_SPACING * sqrt(idx)
 		var theta := idx * GA + float(seed_i) * 1.7
-		var pos := Vector3(rxy * cos(theta), y, rxy * sin(theta)) * r
-		# 随机基础朝向 + 大小抖动（仅影响姿态/尺寸，位置是确定的）。
-		var basis := Basis(Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized(), rng.randf_range(0.0, TAU))
-		basis = basis.scaled(Vector3.ONE * rng.randf_range(0.34, 0.5))
+		var pos := Vector3(r * cos(theta), lift, r * sin(theta))   # 立在桌面 y=0 上
+		# 直立（仅绕竖直轴随机转个朝向）+ 统一显示缩放。
+		var basis := Basis(Vector3.UP, rng.randf_range(0.0, TAU)).scaled(Vector3.ONE * TABLE_DISP)
 		mm.set_instance_transform(i, Transform3D(basis, pos))
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
@@ -892,10 +905,12 @@ func _build_room_multimesh(path: String, count: int, seed_i: int) -> MultiMeshIn
 	return mmi
 
 func _update_room_cam() -> void:
-	var b := Basis.from_euler(Vector3(_room_pitch, _room_yaw, 0.0))
-	var pos: Vector3 = b * Vector3(0, 0, _room_dist)
-	_camera.transform = Transform3D(Basis.IDENTITY, pos)
-	_camera.look_at(Vector3.ZERO, Vector3.UP)
+	# 球坐标环绕桌面注视点：仰角 _room_pitch 受限([60°,88°])，桌板倾斜≤30°。
+	var e := _room_pitch
+	var center := Vector3(0.0, ROOM_CENTER_Y, 0.0)
+	var dirv := Vector3(cos(e) * sin(_room_yaw), sin(e), cos(e) * cos(_room_yaw))
+	_camera.transform = Transform3D(Basis.IDENTITY, center + dirv * _room_dist)
+	_camera.look_at(center, Vector3.UP)
 
 # 成就空间内触摸：单指拖拽旋转视角，双指捏合缩放；鼠标滚轮也可缩放。
 func _room_input(event: InputEvent) -> void:
@@ -935,7 +950,7 @@ func _room_two_dist() -> float:
 
 func _room_orbit(rel: Vector2) -> void:
 	_room_yaw -= rel.x * ROT_SENS
-	_room_pitch = clampf(_room_pitch + rel.y * ROT_SENS, -1.35, 1.35)
+	_room_pitch = clampf(_room_pitch + rel.y * ROT_SENS, ELEV_MIN, ELEV_MAX)   # 仰角受限，桌板俯视≤30°倾斜
 	_update_room_cam()
 
 func _room_zoom(delta_px: float) -> void:
@@ -952,12 +967,11 @@ render_mode cull_back, specular_schlick_ggx;
 uniform vec3 tint : source_color = vec3(0.16, 0.45, 0.95);
 void vertex() {
 	float sd = float(INSTANCE_ID) * 2.3999632;
-	float ang = TIME * 0.35 + sd;
+	float ang = TIME * 0.3 + sd;
 	float s = sin(ang), c = cos(ang);
 	mat2 R = mat2(vec2(c, -s), vec2(s, c));
-	VERTEX.xz = R * VERTEX.xz;
+	VERTEX.xz = R * VERTEX.xz;                     // 绕竖直轴在桌面上原地慢转
 	NORMAL.xz = R * NORMAL.xz;
-	VERTEX.y += sin(TIME * 0.7 + sd) * 0.18;      // 轻微上下浮动
 }
 void fragment() {
 	vec3 N = normalize(NORMAL);
