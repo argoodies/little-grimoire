@@ -100,8 +100,11 @@ var _room_rips: Array = []                        # 最近涟漪 Vector4(x, y, z
 var _rip_idx := 0
 var _room_jar_r := 8.0                            # 瓶半径（判断是否触到瓶）
 var _room_on_jar := false                         # 本次触摸是否落在瓶上（落在瓶上不旋转视角）
-var _room_mmis: Array = []                        # [{node, bases}] 供涟漪推动水晶
-var _room_disturbed := false                      # 上帧是否已位移（用于复位）
+var _room_mmis: Array = []                        # [{node, pos, vel}] 每个水晶的实时位置/速度
+var _room_moving := false                          # 是否还有水晶在动（决定是否继续模拟）
+var _room_inner_r := 8.0                           # 水晶可达最大半径（不出瓶）
+var _room_y_lo := -4.0
+var _room_y_hi := 4.0
 var _cam_saved := Transform3D.IDENTITY
 var _counts: Dictionary = {}                  # 模型 path -> 完成(交付)次数
 var _centered_cache: Dictionary = {}          # path -> 居中归一化后的 ArrayMesh 缓存
@@ -844,8 +847,11 @@ func _open_room() -> void:
 	_room_jar_r = jar_r
 	_room_water_top = water_top
 	_room_cy = (y_lo + y_hi) * 0.5
+	_room_inner_r = inner_r
+	_room_y_lo = y_lo
+	_room_y_hi = y_hi
 	_room_mmis.clear()
-	_room_disturbed = false
+	_room_moving = false
 
 	# 瓶子（透明水晶玻璃壳）。
 	var jar := MeshInstance3D.new()
@@ -944,7 +950,8 @@ func _build_room_multimesh(path: String, count: int, start_g: int, inner_r: floa
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(hash(path)) + start_g * 7919
 	var GA := 2.3999632
-	var bases := PackedVector3Array()
+	var positions := PackedVector3Array()
+	var vels := PackedVector3Array()
 	for i in count:
 		# 圆柱体内低差异分布：随机方向/高度，限制在瓶内（不出瓶）。
 		var g := float(start_g + i) + 0.5
@@ -958,13 +965,14 @@ func _build_room_multimesh(path: String, count: int, start_g: int, inner_r: floa
 			ax = Vector3.UP
 		var basis := Basis(ax.normalized(), rng.randf_range(0.0, TAU)).scaled(Vector3.ONE * TABLE_DISP)
 		mm.set_instance_transform(i, Transform3D(basis, pos))
-		bases.append(pos)
+		positions.append(pos)
+		vels.append(Vector3.ZERO)
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	var mat := ShaderMaterial.new()
 	mat.shader = _make_room_shader()
 	mmi.material_override = mat
-	_room_mmis.append({"node": mmi, "bases": bases})   # 记录基准位置供涟漪推动
+	_room_mmis.append({"node": mmi, "pos": positions, "vel": vels})   # 实时位置/速度
 	return mmi
 
 func _update_room_cam() -> void:
@@ -1027,17 +1035,21 @@ func _room_input(event: InputEvent) -> void:
 			else:
 				_room_orbit((event as InputEventMouseMotion).relative)
 
-# 涟漪波前经过时，把水中模型沿离心方向 + 向上推一下（衰减）。
-func _room_apply_ripple_push() -> void:
+# 物理模拟：涟漪波前经过 → 给冲量；每帧积分位置，水阻力(阻尼)减速，限制在瓶内。
+func _room_sim(delta: float) -> void:
+	var FORCE := 14.0                                 # 冲量强度
+	var DRAG := exp(-1.8 * delta)                     # 水阻力（每帧速度衰减）
+	var moving := false
 	for entry in _room_mmis:
 		var node: MultiMeshInstance3D = entry.get("node")
 		if not is_instance_valid(node):
 			continue
 		var mm: MultiMesh = node.multimesh
-		var bases: PackedVector3Array = entry.get("bases")
-		for i in bases.size():
-			var base := bases[i]
-			var push := Vector3.ZERO
+		var pos: PackedVector3Array = entry.get("pos")
+		var vel: PackedVector3Array = entry.get("vel")
+		for i in pos.size():
+			var p := pos[i]
+			var v := vel[i]
 			for rip in _room_rips:
 				var rv: Vector4 = rip
 				if rv.w < 0.0:
@@ -1046,16 +1058,39 @@ func _room_apply_ripple_push() -> void:
 				if t < 0.0 or t > 3.0:
 					continue
 				var center := Vector3(rv.x, rv.y, rv.z)
-				var dist := base.distance_to(center)
+				var dist := p.distance_to(center)
 				var front := t * 8.0
 				var pulse := (1.0 - smoothstep(0.0, 1.8, absf(dist - front))) * exp(-t * 1.2)
 				if pulse > 0.001:
-					var dv := base - center
+					var dv := p - center
 					if dv.length() < 0.001:
 						dv = Vector3.UP
-					push += dv.normalized() * (pulse * 0.6) + Vector3.UP * (pulse * 0.3)
-			var xf := mm.get_instance_transform(i)
-			mm.set_instance_transform(i, Transform3D(xf.basis, base + push))
+					v += (dv.normalized() * 0.85 + Vector3.UP * 0.35) * (pulse * FORCE * delta)
+			v *= DRAG                                 # 水阻力减速
+			p += v * delta
+			# 限制在瓶内：出半径就贴壁并去掉外向速度；出上下界同理。
+			var rxz := Vector2(p.x, p.z)
+			if rxz.length() > _room_inner_r:
+				rxz = rxz.normalized() * _room_inner_r
+				p.x = rxz.x; p.z = rxz.y
+				var n := Vector3(rxz.x, 0.0, rxz.y).normalized()
+				var vn := v.dot(n)
+				if vn > 0.0:
+					v -= n * vn
+			if p.y < _room_y_lo:
+				p.y = _room_y_lo
+				v.y = maxf(v.y, 0.0)
+			elif p.y > _room_y_hi:
+				p.y = _room_y_hi
+				v.y = minf(v.y, 0.0)
+			pos[i] = p
+			vel[i] = v
+			mm.set_instance_transform(i, Transform3D(mm.get_instance_transform(i).basis, p))
+			if v.length() > 0.03:
+				moving = true
+		entry["pos"] = pos
+		entry["vel"] = vel
+	_room_moving = moving
 
 # 相机射线在 XZ 上是否穿过瓶柱（半径 _room_jar_r）→ 判断触点是否落在瓶上。
 func _ray_hits_jar(pos: Vector2) -> bool:
@@ -1357,15 +1392,14 @@ func _process(delta: float) -> void:
 			_room_water_mat.set_shader_parameter("rtime", _room_time)
 		if _room_waterbody_mat != null:
 			_room_waterbody_mat.set_shader_parameter("rtime", _room_time)
-		# 涟漪冲击水中模型（波前经过时把它推开一下）。
+		# 涟漪冲击 → 给水中模型冲量，之后靠水阻力停下（有涟漪或还在动才模拟）。
 		var any_rip := false
 		for rip in _room_rips:
 			if (rip as Vector4).w >= 0.0 and (_room_time - (rip as Vector4).w) < 3.0:
 				any_rip = true
 				break
-		if any_rip or _room_disturbed:
-			_room_apply_ripple_push()
-			_room_disturbed = any_rip
+		if any_rip or _room_moving:
+			_room_sim(delta)
 		if _godray_mat != null:                   # 神光光心 = 瓶内中心
 			var rvp := get_viewport().get_visible_rect().size
 			if rvp.x > 0.0 and rvp.y > 0.0:
