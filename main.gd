@@ -85,6 +85,8 @@ var _room_dist := 30.0                          # 相机到注视点距离（随
 var _room_dragging := false
 var _room_touches: Dictionary = {}              # 空间内多点触摸（拖拽=旋转，双指=缩放）
 var _room_pinch := 0.0                           # 上一帧双指间距
+var _room_yaw_vel := 0.0                         # 松手后惯性角速度（弧度/秒）
+var _room_pitch_vel := 0.0
 var _cam_saved := Transform3D.IDENTITY
 var _counts: Dictionary = {}                  # 模型 path -> 完成(交付)次数
 var _centered_cache: Dictionary = {}          # path -> 居中归一化后的 ArrayMesh 缓存
@@ -917,6 +919,8 @@ func _room_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			_room_touches[event.index] = event.position
+			_room_yaw_vel = 0.0                       # 抓住时停止惯性
+			_room_pitch_vel = 0.0
 		else:
 			_room_touches.erase(event.index)
 		if _room_touches.size() == 2:
@@ -934,6 +938,9 @@ func _room_input(event: InputEvent) -> void:
 	elif event is InputEventMouseButton:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			_room_dragging = event.pressed
+			if event.pressed:
+				_room_yaw_vel = 0.0
+				_room_pitch_vel = 0.0
 		elif event.button_index == MOUSE_BUTTON_WHEEL_UP and event.pressed:
 			_room_zoom(40.0)
 		elif event.button_index == MOUSE_BUTTON_WHEEL_DOWN and event.pressed:
@@ -949,8 +956,13 @@ func _room_two_dist() -> float:
 	return (pts[0] as Vector2).distance_to(pts[1])
 
 func _room_orbit(rel: Vector2) -> void:
-	_room_yaw -= rel.x * ROT_SENS
-	_room_pitch = clampf(_room_pitch + rel.y * ROT_SENS, ELEV_MIN, ELEV_MAX)   # 仰角受限，桌板俯视≤30°倾斜
+	var dyaw := -rel.x * ROT_SENS
+	var dpitch := rel.y * ROT_SENS
+	_room_yaw += dyaw
+	_room_pitch = clampf(_room_pitch + dpitch, ELEV_MIN, ELEV_MAX)   # 仰角受限，桌板俯视≤30°倾斜
+	var dt := maxf(get_process_delta_time(), 0.0001)
+	_room_yaw_vel = dyaw / dt                                        # 记录角速度供松手惯性
+	_room_pitch_vel = dpitch / dt
 	_update_room_cam()
 
 func _room_zoom(delta_px: float) -> void:
@@ -1072,8 +1084,20 @@ func _spray(screen_pos: Vector2) -> void:
 # ---------- 每帧 ----------
 
 func _process(delta: float) -> void:
-	if _in_room:                              # 成就空间：自转/浮动在 shader 里跑；只更新神光光心
-		if _godray_mat != null:
+	if _in_room:                              # 成就空间：自转/浮动在 shader 里跑
+		# 松手后的旋转惯性（不在拖拽时才滑行，带指数衰减）。
+		var dragging := _room_dragging or _room_touches.size() >= 1
+		if not dragging and (absf(_room_yaw_vel) > 0.002 or absf(_room_pitch_vel) > 0.002):
+			_room_yaw += _room_yaw_vel * delta
+			var pv := _room_pitch + _room_pitch_vel * delta
+			_room_pitch = clampf(pv, ELEV_MIN, ELEV_MAX)
+			if _room_pitch != pv:
+				_room_pitch_vel = 0.0             # 撞到仰角上下限就停竖直惯性
+			var damp := pow(0.05, delta)
+			_room_yaw_vel *= damp
+			_room_pitch_vel *= damp
+			_update_room_cam()
+		if _godray_mat != null:                   # 神光光心 = 空间中心
 			var rvp := get_viewport().get_visible_rect().size
 			if rvp.x > 0.0 and rvp.y > 0.0:
 				_godray_mat.set_shader_parameter("light_uv", _camera.unproject_position(Vector3.ZERO) / rvp)
