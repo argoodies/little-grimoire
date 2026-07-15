@@ -114,6 +114,12 @@ var _room_top := 15.0                              # 瓶口 y
 var _room_body_r := 6.4                            # 水晶容纳球半径（贴瓶身内）
 var _room_wall := 0.4                              # 瓶壁厚度（约束时减去，防穿模）
 var _room_ripple := 0.0                            # 水面涟漪当前幅度（平滑跟随气泡数）
+# 调试暗门：成就页面长按左上角 7s → 弹框改成就数（日光=拼图 / 月光=战车）。
+var _dbg_dialog: AcceptDialog
+var _dbg_edit: LineEdit
+var _dbg_target_path := ""
+var _toggle_press_t := -1.0                        # 左上角按住计时（<0=未按）
+var _debug_fired := false                          # 本次长按已触发（抑制随后的日夜切换）
 const BUBBLE_MAX := 180                             # 气泡池容量
 var _bubble_mm: MultiMesh                           # 气泡 MultiMesh
 var _bub_pos: PackedVector3Array
@@ -138,6 +144,7 @@ func _ready() -> void:
 	_load_prefs()                             # 只读 日/夜 + 已解锁（不保存半程进度）
 	_build_godrays()
 	_build_toggle()
+	_build_debug_dialog()
 	if _night:
 		_apply_lighting(false)
 	# 每次启动都是一个新的未完成水晶。
@@ -282,6 +289,8 @@ func _build_toggle() -> void:
 	_toggle_btn.add_theme_font_size_override("font_size", 108)
 	_toggle_btn.text = "☀️"
 	_toggle_btn.pressed.connect(_on_toggle)
+	_toggle_btn.button_down.connect(_on_toggle_down)   # 调试暗门：长按计时
+	_toggle_btn.button_up.connect(_on_toggle_up)
 	_wire_press(_toggle_btn)
 	_apply_glass(_toggle_btn)
 	layer.add_child(_toggle_btn)
@@ -412,10 +421,57 @@ func _apply_safe_area() -> void:
 		_room_next_btn.offset_bottom = top + btn
 
 func _on_toggle() -> void:
+	if _debug_fired:                       # 刚触发过长按暗门 → 本次不切换日夜
+		_debug_fired = false
+		return
 	_night = not _night
 	_sfx_click.play()
 	_apply_lighting(true)
 	_save_state()
+
+# 调试暗门：只在成就页面里开始按住计时（日光=拼图 / 月光=战车）。
+func _on_toggle_down() -> void:
+	if _in_room:
+		_toggle_press_t = 0.0
+		_debug_fired = false
+	else:
+		_toggle_press_t = -1.0
+
+func _on_toggle_up() -> void:
+	_toggle_press_t = -1.0
+
+# 长按 7s 触发：弹框输入数字改写对应模型的完成数，然后按新数量重建瓶子。
+func _open_debug_prompt() -> void:
+	var path := "res://models/chariot.glb" if _night else "res://models/puzzle.glb"
+	var label := "战车" if _night else "拼图"
+	_dbg_target_path = path
+	_dbg_dialog.title = "调试：设置%s成就数" % label
+	_dbg_edit.text = str(int(_counts.get(path, 0)))
+	_dbg_dialog.popup_centered(Vector2i(420, 170))
+	_dbg_edit.grab_focus()
+	_dbg_edit.select_all()
+
+func _on_debug_confirm() -> void:
+	var n := maxi(0, int(_dbg_edit.text.strip_edges()))
+	_counts[_dbg_target_path] = n
+	_save_state()
+	if _in_room:                           # 按新数量重建瓶子（保住游戏相机）
+		var saved := _cam_saved
+		_open_room()
+		_cam_saved = saved
+
+func _build_debug_dialog() -> void:
+	_dbg_dialog = AcceptDialog.new()
+	_dbg_dialog.title = "调试"
+	_dbg_dialog.ok_button_text = "确定"
+	_dbg_dialog.unresizable = false
+	_dbg_edit = LineEdit.new()
+	_dbg_edit.placeholder_text = "输入数字"
+	_dbg_edit.custom_minimum_size = Vector2(320, 46)
+	_dbg_dialog.add_child(_dbg_edit)
+	_dbg_dialog.register_text_enter(_dbg_edit)   # 回车即确定
+	_dbg_dialog.confirmed.connect(_on_debug_confirm)
+	add_child(_dbg_dialog)
 
 func _apply_lighting(animate: bool) -> void:
 	var dir_c := Color(0.62, 0.74, 1.0) if _night else Color(1.0, 0.94, 0.85)
@@ -1646,6 +1702,13 @@ func _spray(screen_pos: Vector2) -> void:
 # ---------- 每帧 ----------
 
 func _process(delta: float) -> void:
+	# 调试暗门：成就页面长按左上角满 7s → 弹框改成就数。
+	if _toggle_press_t >= 0.0:
+		_toggle_press_t += delta
+		if _toggle_press_t >= 7.0 and not _debug_fired:
+			_debug_fired = true
+			_toggle_press_t = -1.0
+			_open_debug_prompt()
 	if _in_room:                              # 成就空间：自转/浮动在 shader 里跑
 		# 松手后的旋转惯性（不在拖拽时才滑行，带指数衰减）。
 		var dragging := _room_dragging or _room_touches.size() >= 1
