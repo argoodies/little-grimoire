@@ -1037,8 +1037,15 @@ func _room_two_dist() -> float:
 		return 0.0
 	return (pts[0] as Vector2).distance_to(pts[1])
 
-func _room_orbit(_rel: Vector2) -> void:
-	pass                                                            # 视角固定，不旋转
+func _room_orbit(rel: Vector2) -> void:
+	var dyaw := -rel.x * ROT_SENS
+	var dpitch := rel.y * ROT_SENS
+	_room_yaw += dyaw
+	_room_pitch = clampf(_room_pitch + dpitch, ELEV_MIN, ELEV_MAX)
+	var dt := maxf(get_process_delta_time(), 0.0001)
+	_room_yaw_vel = dyaw / dt                                        # 记录角速度供松手惯性
+	_room_pitch_vel = dpitch / dt
+	_update_room_cam()
 
 func _room_zoom(delta_px: float) -> void:
 	_room_dist = clampf(_room_dist - delta_px * 0.03, 4.0, 60.0)   # 拉近/拉远
@@ -1052,14 +1059,7 @@ func _make_room_shader() -> Shader:
 shader_type spatial;
 render_mode cull_back, specular_schlick_ggx;
 uniform vec3 tint : source_color = vec3(0.16, 0.45, 0.95);
-void vertex() {
-	float sd = float(INSTANCE_ID) * 2.3999632;
-	float ang = TIME * 0.3 + sd;
-	float s = sin(ang), c = cos(ang);
-	mat2 R = mat2(vec2(c, -s), vec2(s, c));
-	VERTEX.xz = R * VERTEX.xz;                     // 绕竖直轴在桌面上原地慢转
-	NORMAL.xz = R * NORMAL.xz;
-}
+// 静止陈列（不自动旋转）；朝向由实例 basis 决定。
 void fragment() {
 	vec3 N = normalize(NORMAL);
 	float fres = pow(1.0 - clamp(dot(N, normalize(VIEW)), 0.0, 1.0), 2.5);
