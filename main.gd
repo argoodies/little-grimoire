@@ -80,7 +80,7 @@ const ROOM_ELEV := 0.42                            # 固定俯角（略俯视，
 var _room_yaw := 0.0                               # 绕竖直轴方位角
 var _room_yaw_vel := 0.0                           # 方位角惯性（弧度/秒）
 var _map_btn: Button
-var _close_btn: Button                          # 成就空间右上角关闭（常驻）
+var _room_next_btn: Button                          # 成就空间右上角换关（常驻）
 var _in_room := false
 var _room_root: Node3D                        # 成就空间根
 var _room_dist := 30.0                          # 相机到注视点距离（随规模自适应）
@@ -303,11 +303,11 @@ func _build_toggle() -> void:
 	layer.add_child(_play_btn)
 
 	# 成就空间右上角：关闭按钮（进空间才显示，常驻不淡出）。
-	_close_btn = _make_flat_btn("res://textures/icon_close.png")
-	_close_btn.pressed.connect(_close_room)
-	_close_btn.visible = false
-	_apply_glass(_close_btn)
-	layer.add_child(_close_btn)
+	_room_next_btn = _make_flat_btn("res://textures/icon_refresh.png")
+	_room_next_btn.pressed.connect(_room_next_level)
+	_room_next_btn.visible = false
+	_apply_glass(_room_next_btn)
+	layer.add_child(_room_next_btn)
 
 	_apply_safe_area()
 	get_viewport().size_changed.connect(_apply_safe_area)
@@ -401,13 +401,13 @@ func _apply_safe_area() -> void:
 		_map_btn.offset_left = -right - btn - g - btn
 		_map_btn.offset_top = top
 		_map_btn.offset_bottom = top + btn
-	if _close_btn != null:                     # 成就空间关闭：右上角最右
-		_close_btn.anchor_left = 1.0
-		_close_btn.anchor_right = 1.0
-		_close_btn.offset_right = -right
-		_close_btn.offset_left = -right - btn
-		_close_btn.offset_top = top
-		_close_btn.offset_bottom = top + btn
+	if _room_next_btn != null:                     # 成就空间换关：右上角最右
+		_room_next_btn.anchor_left = 1.0
+		_room_next_btn.anchor_right = 1.0
+		_room_next_btn.offset_right = -right
+		_room_next_btn.offset_left = -right - btn
+		_room_next_btn.offset_top = top
+		_room_next_btn.offset_bottom = top + btn
 
 func _on_toggle() -> void:
 	_night = not _night
@@ -847,9 +847,9 @@ func _open_room() -> void:
 	_hide_bottom_ui()
 	if _map_btn != null:
 		_map_btn.visible = false                  # 空间内不需要画廊按钮
-	if _close_btn != null:
-		_close_btn.visible = true                 # 右上角关闭：常驻
-		_close_btn.modulate.a = 1.0
+	if _room_next_btn != null:
+		_room_next_btn.visible = true                 # 右上角换关：常驻
+		_room_next_btn.modulate.a = 1.0
 	# 神光保留开启（下面 _process 里把光心设到空间中心）。
 	_cam_saved = _camera.transform
 	_room_yaw = 0.0
@@ -958,8 +958,8 @@ func _close_room() -> void:
 		return
 	_sfx_click.play()
 	_in_room = false
-	if _close_btn != null:
-		_close_btn.visible = false
+	if _room_next_btn != null:
+		_room_next_btn.visible = false
 	if _room_root != null and is_instance_valid(_room_root):
 		_room_root.queue_free()
 		_room_root = null
@@ -972,6 +972,11 @@ func _close_room() -> void:
 	_camera.transform = _cam_saved
 	_touches.clear()
 	_room_touches.clear()
+
+# 成就空间右上角换关：退出空间并随机换一关。
+func _room_next_level() -> void:
+	_close_room()
+	_load_random_level()
 
 # 模型在成就空间里的水平半径（柱体半径）：归一化到 TARGET_W 后再乘 TABLE_DISP。
 func _model_room_radius(path: String) -> float:
