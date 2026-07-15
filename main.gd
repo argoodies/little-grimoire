@@ -1159,7 +1159,7 @@ func _room_impact(pos: Vector2) -> void:
 				var rax := Vector3(randf_range(-1, 1), randf_range(-1, 1), randf_range(-1, 1))
 				if rax.length() < 0.01:
 					rax = Vector3.UP
-				avels[i] += rax.normalized() * (randf_range(5.6, 7.0) * fall)   # ≈1 圈/秒
+				avels[i] += rax.normalized() * (randf_range(24.0, 26.5) * fall)   # ≈4 圈/秒
 		entry["vel"] = vels
 		entry["avel"] = avels
 	_room_moving = true
