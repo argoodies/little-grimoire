@@ -623,7 +623,7 @@ func _update_room_progress() -> void:
 		_room_circle_shown = false
 		_room_circle_btn.visible = false
 
-# 点击完成圆圈 → 完成音乐 + 变对勾 → 播放挑战视频 → 进下一挑战。
+# 点击完成圆圈 → 谜团音 + 变全视之眼 → 直接进结算（光芒+减15），不再播视频。
 func _on_room_circle() -> void:
 	if _room_circle_lock:
 		return
@@ -633,7 +633,7 @@ func _on_room_circle() -> void:
 	_room_circle_btn.modulate.a = 1.0
 	var tw := create_tween()
 	tw.tween_interval(0.9)
-	tw.tween_callback(_play_challenge_video)
+	tw.tween_callback(_finish_challenge)
 
 func _play_challenge_video() -> void:
 	if _video_player == null:
@@ -1288,8 +1288,8 @@ func _open_room(do_intro := true) -> void:
 	_room_dist_max = _room_R / (0.33 * half_tan)
 	_room_dist = clampf(_room_R * 3.2 + _room_top * 0.5, _room_dist_min, _room_dist_max)
 	_update_room_cam()
-	if do_intro:                                     # 开场：绕竖直轴转 4 圈+随机 0-180°，减速停
-		var target := 4.0 * TAU + randf_range(0.0, PI)
+	if do_intro:                                     # 开场：绕竖直轴转 1 圈+随机 0-180°，减速停
+		var target := 1.0 * TAU + randf_range(0.0, PI)
 		_room_intro_tw = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
 		_room_intro_tw.tween_method(_set_room_yaw, 0.0, target, 3.0)
 
