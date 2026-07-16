@@ -6,10 +6,10 @@ config_version=5
 
 [application]
 
-config/name="Crystal Polish"
+config/name="Crystal Puzzle"
 config/version="0.0.1"
 config/name_localized={
-"en": "Crystal Polish",
+"en": "Crystal Puzzle",
 "ja": "水晶磨き"
 }
 run/main_scene="res://main.tscn"

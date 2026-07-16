@@ -1019,7 +1019,7 @@ func _show_done_label() -> void:
 	if _room_done_box == null:
 		return
 	var ver := str(ProjectSettings.get_setting("application/config/version", "0.0.1"))
-	_room_done_label.text = "擦水晶 · 水晶磨き · Crystal Polish · v%s" % ver   # 中日英一行
+	_room_done_label.text = "擦水晶 · 水晶磨き · Crystal Puzzle · v%s" % ver   # 中日英一行
 	_room_done_box.visible = true
 	_room_done_box.modulate = Color(1, 1, 1, 1)   # 纯白，不闪烁
 

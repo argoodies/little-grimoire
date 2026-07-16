@@ -1,7 +1,7 @@
-# 擦水晶 · Wipe the Crystal（Godot 版）
+# 擦水晶 · 水晶磨き · Crystal Puzzle（Godot 版）
 
 一款轻松解压的 3D 擦拭小游戏:一枚蒙尘的**水晶拼图**，喷水擦去灰尘，露出下面通透光滑、折射炫光的水晶。
-同一套 GDScript 代码同时出 **iOS** 与 **Web（GitHub Pages）**。
+同一套 GDScript 代码同时出 **iOS / Web（GitHub Pages）/ Android**。三语发行:繁/简中「擦水晶」、日「水晶磨き」、英「Crystal Puzzle」。
 
 - 引擎：Godot 4.6.3，语言 GDScript
 - 渲染：`gl_compatibility`（OpenGL / WebGL2），Web 与移动端都稳
@@ -11,11 +11,11 @@
 ## 玩法
 
 - **喷水擦拭**：长按拖动水晶表面，向接触处持续喷水冲刷，一点点擦掉灰尘。
-- **交付**：把整颗擦到 100% 无尘，底部中央出现圆圈；点它交付（对勾 + 奖励音），随后底部出现**画廊**与**▶️ 播放**按钮。
-- **▶️ 播放**：随机换一个未清洗的水晶重新开始。
-- **画廊**：横向翻页浏览各关模型（已完成显示为洗净水晶，未完成为覆尘态），点模型进入该关。
+- **交付**：把整颗擦到 100% 无尘，底部中央出现圆圈；点它交付（对勾 + 奖励音），水晶被收进成就宝瓶，随后右上角出现**画廊**与**播放**按钮。
+- **播放**：随机换一个未清洗的水晶重新开始。
+- **成就宝瓶（画廊按钮）**：交付过的水晶收进一个装满水的水晶宝瓶，在水里漂浮、碰撞；拖拽绕竖直轴旋转、缩放、点击瓶身产生冲击。凑够 30 颗触发"全视之眼"完成仪式（瓶中爆发光芒 + 随机减 15），瓶子最多 30 颗（先进先出）。
 - **旋转/缩放**：拖背景旋转、双指缩放；左上角 ☀️/🌙 切换日夜。
-- 每次启动都是一个新的随机未完成水晶；只持久化日/夜设置与已解锁模型。
+- 每次启动都是一个新的随机未完成水晶；持久化日/夜、挑战关与**成就水晶队列**。
 
 ## 技术要点
 
@@ -29,7 +29,8 @@
 | 目标 | Workflow | 说明 |
 | --- | --- | --- |
 | Web → GitHub Pages | `.github/workflows/web-pages.yml` | 无线程导出（适配 Pages 无 COOP/COEP 头），跨仓库推到公开的 `argoodies/crystal-puzzle-web` 托管 |
-| iOS → TestFlight | `.github/workflows/ios-testflight.yml` | macOS runner + Godot iOS 导出模板 + 自动签名归档 + `altool` 上传，`build = 1000 + run_number` |
+| iOS → TestFlight | `.github/workflows/ios-testflight.yml` | macOS runner + Godot iOS 导出模板 + 自动签名归档 + `altool` 上传，`build = 1000 + run_number`，App `io.github.argoodies.crystal` |
+| Android → APK | `.github/workflows/android-apk.yml` | ubuntu + JDK17 + Android SDK build-tools，预建模板导出 debug 签名 APK（arm64+armv7）作产物，再发成公开 GitHub Release 直链 |
 
 ## 本地
 

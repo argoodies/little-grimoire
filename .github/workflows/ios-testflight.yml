@@ -96,10 +96,10 @@ jobs:
           done
 
           # 动态应用名：Godot 4.6 iOS 导出忽略 name_localized，这里手动注入本地化 InfoPlist.strings。
-          # 英文 → Crystal Polish；繁/简中 → 擦水晶；日文/其他 → 水晶磨き（base + ja.lproj）。
+          # 英文 → Crystal Puzzle；繁/简中 → 擦水晶；日文/其他 → 水晶磨き（base + ja.lproj）。
           BASEDIR=$(dirname "$XCPROJ")/"$SCHEME"
           mkdir -p "$BASEDIR/en.lproj" "$BASEDIR/ja.lproj" "$BASEDIR/zh-Hant.lproj" "$BASEDIR/zh-Hans.lproj"
-          printf '"CFBundleDisplayName" = "Crystal Polish";\n"CFBundleName" = "Crystal Polish";\n' > "$BASEDIR/en.lproj/InfoPlist.strings"
+          printf '"CFBundleDisplayName" = "Crystal Puzzle";\n"CFBundleName" = "Crystal Puzzle";\n' > "$BASEDIR/en.lproj/InfoPlist.strings"
           printf '"CFBundleDisplayName" = "水晶磨き";\n"CFBundleName" = "水晶磨き";\n' > "$BASEDIR/ja.lproj/InfoPlist.strings"
           printf '"CFBundleDisplayName" = "擦水晶";\n"CFBundleName" = "擦水晶";\n' > "$BASEDIR/zh-Hant.lproj/InfoPlist.strings"
           printf '"CFBundleDisplayName" = "擦水晶";\n"CFBundleName" = "擦水晶";\n' > "$BASEDIR/zh-Hans.lproj/InfoPlist.strings"
