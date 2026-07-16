@@ -1,7 +1,7 @@
 name: iOS → TestFlight
 
 # Godot 导出 iOS Xcode 工程 → xcodebuild 自动签名归档 → altool 上传到 App Store Connect。
-# 发布到既有 App 记录 io.argoodies.deskfeel（6787916716），复用 ASC API 密钥。手动触发。
+# 发布到 App 记录 io.github.argoodies.crystal（6791685320），复用 ASC API 密钥。手动触发。
 # 需 macos-15（含 Xcode 26 / iOS 26 SDK，Apple 强制要求）。
 on:
   workflow_dispatch:
