@@ -80,6 +80,7 @@ const ROOM_CENTER_Y := 2.0                      # 相机注视点高度（桌面
 const ROOM_ELEV := 0.5236                           # 固定俯角 30°（露出远端瓶口）
 var _room_yaw := 0.0                               # 绕竖直轴方位角
 var _room_yaw_vel := 0.0                           # 方位角惯性（弧度/秒）
+var _room_intro_tw: Tween                          # 进空间开场旋转 tween
 var _map_btn: Button
 var _room_next_btn: Button                          # 成就空间右上角换关（常驻）
 # 成就挑战进度：底部进度条 x/目标；达标出完成圆圈 → 完成音乐 → 视频 → 进下一挑战。
@@ -484,7 +485,7 @@ func _debug_double_count() -> void:
 	_save_state()
 	if _in_room:                           # 按新数量重建瓶子（保住游戏相机）
 		var saved := _cam_saved
-		_open_room()
+		_open_room(false)
 		_cam_saved = saved
 
 # 调试暗门：只在成就页面开始按住播放键计时。
@@ -506,7 +507,7 @@ func _debug_clear_counts() -> void:
 	_save_state()
 	if _in_room:                           # 重建空瓶（保住游戏相机）
 		var saved := _cam_saved
-		_open_room()
+		_open_room(false)
 		_cam_saved = saved
 
 # ---------- 成就挑战：进度条 / 完成圆圈 / 视频 ----------
@@ -691,7 +692,7 @@ func _finish_challenge() -> void:
 	_save_state()
 	if _in_room:                               # 重建瓶子（保住游戏相机），并刷新进度
 		var saved := _cam_saved
-		_open_room()
+		_open_room(false)
 		_cam_saved = saved
 		_room_flash_light()                    # 巨大光芒 5s 后消失
 	else:
@@ -1167,8 +1168,9 @@ func _toggle_gallery() -> void:
 	else:
 		_open_room()
 
-func _open_room() -> void:
+func _open_room(do_intro := true) -> void:
 	_in_room = true
+	_kill_room_intro()
 	_touches.clear()
 	_world.visible = false
 	_spray_fx.emitting = false
@@ -1286,6 +1288,10 @@ func _open_room() -> void:
 	_room_dist_max = _room_R / (0.33 * half_tan)
 	_room_dist = clampf(_room_R * 3.2 + _room_top * 0.5, _room_dist_min, _room_dist_max)
 	_update_room_cam()
+	if do_intro:                                     # 开场：绕竖直轴转 4 圈+随机 0-180°，减速停
+		var target := 4.0 * TAU + randf_range(0.0, PI)
+		_room_intro_tw = create_tween().set_trans(Tween.TRANS_CUBIC).set_ease(Tween.EASE_OUT)
+		_room_intro_tw.tween_method(_set_room_yaw, 0.0, target, 3.0)
 
 func _spawn_bubble(at: Vector3, radius: float) -> void:
 	var i := _bub_idx
@@ -1300,6 +1306,7 @@ func _close_room() -> void:
 		return
 	_sfx_click.play()
 	_in_room = false
+	_kill_room_intro()
 	if _room_next_btn != null:
 		_room_next_btn.visible = false
 	_show_room_progress(false)                        # 隐藏进度条 + 完成圆圈
@@ -1390,7 +1397,10 @@ func _build_room_multimesh(path: String, count: int, start_g: int) -> MultiMeshI
 		mm.set_instance_transform(i, Transform3D(basis, pos))
 		positions.append(pos)
 		vels.append(Vector3.ZERO)
-		avels.append(Vector3.ZERO)
+		var sax := Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1))
+		if sax.length() < 0.01:
+			sax = Vector3.UP
+		avels.append(sax.normalized() * rng.randf_range(1.5, 3.5))   # 初始带点自旋（后随水阻力减速）
 	var mmi := MultiMeshInstance3D.new()
 	mmi.multimesh = mm
 	var mat := ShaderMaterial.new()
@@ -1398,6 +1408,17 @@ func _build_room_multimesh(path: String, count: int, start_g: int) -> MultiMeshI
 	mmi.material_override = mat
 	_room_mmis.append({"node": mmi, "pos": positions, "vel": vels, "avel": avels})   # 位置/速度/角速度
 	return mmi
+
+# 开场旋转 tween 回调：只在空间内驱动方位角 + 更新相机。
+func _set_room_yaw(a: float) -> void:
+	if not _in_room:
+		return
+	_room_yaw = a
+	_update_room_cam()
+
+func _kill_room_intro() -> void:
+	if _room_intro_tw != null and _room_intro_tw.is_valid():
+		_room_intro_tw.kill()
 
 func _update_room_cam() -> void:
 	# 只绕竖直轴旋转：固定俯角 ROOM_ELEV，方位角 _room_yaw 决定绕 Y 环绕位置。
@@ -1413,6 +1434,7 @@ func _update_room_cam() -> void:
 func _room_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed:
+			_kill_room_intro()                        # 触摸 → 打断开场旋转
 			_room_touches[event.index] = event.position
 			_room_yaw_vel = 0.0
 			if _room_touches.size() == 1:
@@ -1442,6 +1464,7 @@ func _room_input(event: InputEvent) -> void:
 		if event.button_index == MOUSE_BUTTON_LEFT:
 			_room_dragging = event.pressed
 			if event.pressed:
+				_kill_room_intro()                    # 点击 → 打断开场旋转
 				_room_yaw_vel = 0.0
 				_room_on_jar = _ray_hits_jar(event.position)
 				if _room_on_jar:
