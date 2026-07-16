@@ -574,7 +574,7 @@ func _build_room_progress_ui() -> void:
 	_room_done_label = Label.new()
 	_room_done_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_room_done_label.add_theme_font_override("font", cjk)
-	_room_done_label.add_theme_font_size_override("font_size", 44)
+	_room_done_label.add_theme_font_size_override("font_size", 32)
 	_room_done_label.add_theme_color_override("font_color", Color(1, 1, 1))   # 纯白
 	_room_done_box.add_child(_room_done_label)
 
@@ -1009,21 +1009,12 @@ func _show_intro_btns(animate := true) -> void:
 	_intro_btns = true
 	_idle_time = 0.0
 
-# 本地化 app 名（按设备语言）。
-func _app_name_localized() -> String:
-	var loc := TranslationServer.get_locale().to_lower()
-	if loc.begins_with("ja"):
-		return "水晶磨き"
-	if loc.begins_with("zh"):
-		return "擦水晶"
-	return "Crystal Polish"
-
-# 完成后：圆圈位置显示「app 名 + 版本号」闪光文字，常驻直到离开成就页面。
+# 完成后：圆圈位置显示中日英名+版本号（纯白），常驻直到离开成就页面。
 func _show_done_label() -> void:
 	if _room_done_box == null:
 		return
 	var ver := str(ProjectSettings.get_setting("application/config/version", "0.0.1"))
-	_room_done_label.text = "%s  v%s" % [_app_name_localized(), ver]
+	_room_done_label.text = "擦水晶 · 水晶磨き · Crystal Polish · v%s" % ver   # 中日英一行
 	_room_done_box.visible = true
 	_room_done_box.modulate = Color(1, 1, 1, 1)   # 纯白，不闪烁
 
