@@ -46,6 +46,8 @@ var _pinch_mid := Vector2.ZERO
 var _manual_rot := Vector3.ZERO
 var _rotating := false
 var _bg_rotating := false                 # 单指/拖背景旋转画面
+var _tap_pos := Vector2.ZERO              # 单指按下位置（判断"单击"）
+var _tap_moved := false                   # 本次触摸是否移动过（移动=非单击）
 var _washing := false
 var _wash_screen := Vector2.ZERO
 
@@ -980,6 +982,18 @@ func _show_intro_btns(animate := true) -> void:
 	_reveal_dual(animate)
 	_intro_btns = true
 	_idle_time = 0.0
+
+# 右上角附近的单击 → 立即让画廊+播放出现（不必等 3s 闲置）。
+func _maybe_tap_show_btns(pos: Vector2) -> void:
+	if _intro_btns:
+		return
+	if _btn_state != ST_REFRESH and _btn_state != ST_DELIVERED:
+		return
+	var vp := get_viewport().get_visible_rect().size
+	if vp.x <= 0.0 or vp.y <= 0.0:
+		return
+	if pos.x >= vp.x * 0.5 and pos.y <= vp.y * 0.24:   # 右上角附近区域
+		_show_intro_btns()
 
 # 首次擦拭/旋转 → 让开局的画廊+播放淡出隐藏。
 func _fade_out_intro_btns() -> void:
@@ -2230,8 +2244,13 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		if event.pressed:
 			_touches[event.index] = event.position
+			if _touches.size() == 1:
+				_tap_pos = event.position
+				_tap_moved = false
 		else:
 			_touches.erase(event.index)
+			if _touches.size() == 0 and not _tap_moved:
+				_maybe_tap_show_btns(_tap_pos)   # 单击右上角 → 显示按钮
 		if _touches.size() == 1:
 			var pos: Vector2 = _touches.values()[0]
 			if not _delivered and _hit_model(pos):
@@ -2248,6 +2267,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	elif event is InputEventScreenDrag:
 		if _touches.has(event.index):
 			_touches[event.index] = event.position
+		_tap_moved = true                       # 拖动 → 非单击
 		if _touches.size() == 1:
 			if _washing:
 				_wash_screen = event.position
@@ -2273,16 +2293,22 @@ func _unhandled_input(event: InputEvent) -> void:
 			if event.pressed: _zoom_by(1.0 / 0.9)
 		elif event.button_index == MOUSE_BUTTON_LEFT:
 			if event.pressed:
+				_tap_pos = event.position
+				_tap_moved = false
 				if not _delivered and _hit_model(event.position):
 					_set_washing(true, event.position)   # 点到模型 → 冲刷
 				else:
 					_bg_rotating = true                  # 点到背景 → 旋转画面
 			else:
+				if not _tap_moved:
+					_maybe_tap_show_btns(event.position)   # 单击右上角 → 显示按钮
 				_set_washing(false, Vector2.ZERO)
 				_bg_rotating = false
 		elif event.button_index == MOUSE_BUTTON_RIGHT:
 			_rotating = event.pressed
 	elif event is InputEventMouseMotion:
+		if _bg_rotating or _rotating or _washing:
+			_tap_moved = true               # 拖动 → 非单击
 		if _washing:
 			_wash_screen = event.position
 			_moved = true                   # 移动了 → 本帧喷水
