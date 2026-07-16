@@ -2233,10 +2233,10 @@ func _process(delta: float) -> void:
 	if _spray_fx.emitting != want_emit:
 		_spray_fx.emitting = want_emit
 	_moved = false                            # 每帧消费，无余量
-	# 覆尘态(ST_REFRESH)不自动浮现，只靠单击右上角召出；已完成(ST_DELIVERED)保留静置 3s 回归。
+	# 覆尘态(ST_REFRESH)不自动浮现，只靠单击右上角召出；已完成(ST_DELIVERED)保留静置 1s 回归。
 	if _btn_state == ST_DELIVERED and not _intro_btns:
 		_idle_time += delta
-		if _idle_time >= 3.0:
+		if _idle_time >= 1.0:
 			_show_intro_btns()
 	var target := _manual_rot
 	var weight := 1.0 - pow(0.002, delta)
