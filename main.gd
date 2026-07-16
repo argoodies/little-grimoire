@@ -558,9 +558,12 @@ func _build_room_progress_ui() -> void:
 	_room_done_label = Label.new()
 	_room_done_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	_room_done_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
-	var sysfont := SystemFont.new()                # 系统字体（含 CJK 字形）
-	sysfont.font_names = PackedStringArray(["PingFang TC", "PingFang SC", "Hiragino Sans", "Noto Sans CJK TC", "Noto Sans CJK SC", "Arial Unicode MS", "sans-serif"])
-	_room_done_label.add_theme_font_override("font", sysfont)
+	# 主字体=打包的 CJK 子集（擦水晶磨き），fallback=系统拉丁字体（渲染 ASCII/版本号）。
+	var cjk: FontFile = load("res://fonts/appname.ttf")
+	var latin := SystemFont.new()
+	latin.font_names = PackedStringArray(["sans-serif"])
+	cjk.fallbacks = [latin]
+	_room_done_label.add_theme_font_override("font", cjk)
 	_room_done_label.add_theme_font_size_override("font_size", 44)
 	_room_done_label.add_theme_color_override("font_color", Color(0.85, 0.92, 1.0))
 	_room_done_label.add_theme_color_override("font_outline_color", Color(0.4, 0.6, 1.0, 0.9))
