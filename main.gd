@@ -1025,8 +1025,8 @@ func _show_done_label() -> void:
 	if _room_done_tw != null and _room_done_tw.is_valid():
 		_room_done_tw.kill()
 	_room_done_tw = _room_done_label.create_tween().set_loops().set_trans(Tween.TRANS_SINE)
-	_room_done_tw.tween_property(_room_done_label, "modulate", Color(0.55, 0.75, 1.0, 0.8), 0.8)
-	_room_done_tw.tween_property(_room_done_label, "modulate", Color(1.0, 1.0, 1.0, 1.0), 0.8)
+	_room_done_tw.tween_property(_room_done_label, "modulate", Color(0.55, 0.75, 1.0, 0.8), 1.8)
+	_room_done_tw.tween_property(_room_done_label, "modulate", Color(1.0, 1.0, 1.0, 1.0), 1.8)
 
 func _hide_done_label() -> void:
 	if _room_done_tw != null and _room_done_tw.is_valid():
