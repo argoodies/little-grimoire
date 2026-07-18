@@ -27,6 +27,9 @@ var _uvs: PackedVector2Array              # 对应 UV，用于把冲刷画进遮
 var _mask_img: Image                      # 冲刷遮罩：0=覆尘, 1=已冲刷露出
 var _mask_tex: ImageTexture
 var _circle_btn: Button                     # 底部中央：达标圆圈→交付对勾
+var _pct_label: Label                       # 底部中央：无尘度≥90% 时常显的“9x%”
+var _pct_val := -1                          # 当前显示的整数百分比（-1=未显示）
+var _circle_pulse_tw: Tween                 # 达标圆圈的 2s 呼吸循环
 var _play_btn: Button                       # 底部中央：▶️ 随机下一关
 var _spinning := false                     # 旋转4周动画中，暂停常规旋转/冲刷
 
@@ -221,6 +224,7 @@ func _apply_bottom_state() -> void:
 # 载入一个随机的未完成(覆尘)水晶，重新开始擦拭。
 func _load_random_level() -> void:
 	_btn_state = ST_REFRESH
+	_hide_pct_label()
 	_delivered = false
 	_model_path = MODELS[randi() % MODELS.size()]
 	_mask_img = Image.create(MSZ, MSZ, false, Image.FORMAT_L8)
@@ -337,6 +341,16 @@ func _build_toggle() -> void:
 	_circle_btn.visible = false
 	layer.add_child(_circle_btn)
 
+	# 底部中央：无尘度≥90% 起常显“9x%”，达标(100%)换成呼吸圆圈。
+	_pct_label = Label.new()
+	_pct_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	_pct_label.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	_pct_label.add_theme_font_size_override("font_size", 64)
+	_pct_label.add_theme_color_override("font_color", Color(1.0, 1.0, 1.0, 0.92))
+	_pct_label.mouse_filter = Control.MOUSE_FILTER_IGNORE   # 不挡擦拭手势
+	_pct_label.visible = false
+	layer.add_child(_pct_label)
+
 	# 底部中央双按钮：画廊 + ▶️ 随机下一关（交付后出现）。
 	_map_btn = _make_flat_btn("res://textures/icon_map.png")
 	_map_btn.pressed.connect(_toggle_gallery)
@@ -434,6 +448,15 @@ func _apply_safe_area() -> void:
 		_circle_btn.offset_right = bbtn * 0.5
 		_circle_btn.offset_bottom = -yb
 		_circle_btn.offset_top = -yb - bbtn
+		if _pct_label != null:                 # 百分比标签与圆圈同位
+			_pct_label.anchor_left = 0.5
+			_pct_label.anchor_right = 0.5
+			_pct_label.anchor_top = 1.0
+			_pct_label.anchor_bottom = 1.0
+			_pct_label.offset_left = -bbtn * 0.5
+			_pct_label.offset_right = bbtn * 0.5
+			_pct_label.offset_bottom = -yb
+			_pct_label.offset_top = -yb - bbtn
 	# 交付后：画廊 + 播放，右上角横向排列，与日/夜同大(btn)。播放最靠右，画廊在其左。
 	var g := 28.0                              # 两按钮间距
 	if _play_btn != null:
@@ -977,6 +1000,8 @@ func _paint(uv: Vector2, r: float, do_update: bool = true) -> void:
 # ---------- 底部按钮：圆圈 / 对勾 / 双按钮(画廊+播放) ----------
 
 func _hide_bottom_ui() -> void:
+	_stop_circle_pulse()
+	_hide_pct_label()
 	if _circle_btn != null:
 		_circle_btn.visible = false
 	if _map_btn != null:
@@ -984,14 +1009,43 @@ func _hide_bottom_ui() -> void:
 	if _play_btn != null:
 		_play_btn.visible = false
 
-# 显示达标圆圈（淡入），隐藏双按钮。
+# 无尘度≥90%：底部中央常显“9x%”，随整数百分比变化更新。
+func _show_pct_label(pct: int) -> void:
+	if _pct_label == null:
+		return
+	if not _pct_label.visible:
+		_pct_label.modulate.a = 0.0
+		_pct_label.visible = true
+		create_tween().tween_property(_pct_label, "modulate:a", 1.0, 0.3)
+	if pct != _pct_val:
+		_pct_val = pct
+		_pct_label.text = "%d%%" % pct
+
+func _hide_pct_label() -> void:
+	_pct_val = -1
+	if _pct_label != null:
+		_pct_label.visible = false
+
+# 达标圆圈：2s 周期渐显渐隐呼吸循环。
+func _start_circle_pulse() -> void:
+	_stop_circle_pulse()
+	_circle_btn.modulate.a = 0.25
+	_circle_pulse_tw = create_tween().set_loops()
+	_circle_pulse_tw.tween_property(_circle_btn, "modulate:a", 1.0, 1.0).set_trans(Tween.TRANS_SINE)
+	_circle_pulse_tw.tween_property(_circle_btn, "modulate:a", 0.25, 1.0).set_trans(Tween.TRANS_SINE)
+
+func _stop_circle_pulse() -> void:
+	if _circle_pulse_tw != null and _circle_pulse_tw.is_valid():
+		_circle_pulse_tw.kill()
+	_circle_pulse_tw = null
+
+# 显示达标圆圈（呼吸循环），隐藏双按钮与百分比。
 func _show_circle() -> void:
 	_hide_bottom_ui()
 	_circle_btn.icon = load("res://textures/icon_circle.png")
 	_circle_btn.disabled = false
-	_circle_btn.modulate.a = 0.0
 	_circle_btn.visible = true
-	create_tween().tween_property(_circle_btn, "modulate:a", 1.0, 0.3)
+	_start_circle_pulse()
 
 # 显示双按钮（画廊 + ▶️）。animate=true 时淡入。
 func _reveal_dual(animate: bool) -> void:
@@ -1075,6 +1129,7 @@ func _enter_delivered() -> void:
 	_add_crystal(_model_path)                       # 入队（挑战2起满 30 则剔除最早的）
 	_save_state()
 	# 圆圈变对勾并锁定，1 秒后对勾渐隐 → 双按钮渐现。
+	_stop_circle_pulse()                            # 停呼吸，对勾保持满亮
 	_circle_btn.icon = load("res://textures/icon_check.png")
 	_circle_btn.modulate.a = 1.0
 	_circle_btn.visible = true
@@ -1100,8 +1155,15 @@ func _play_next() -> void:
 func _check_coverage() -> void:
 	if _btn_state != ST_REFRESH or _uvs.is_empty():
 		return
-	if _coverage() >= 1.0:
-		_enter_circle()
+	var cov := _coverage()
+	if cov >= 1.0:
+		_enter_circle()                        # 100% → 呼吸圆圈（内部会隐藏百分比）
+		return
+	var pct := int(cov * 100.0)                # 精确到整数百分比
+	if pct >= 90:
+		_show_pct_label(pct)                   # 90~99% → 常显“9x%”
+	else:
+		_hide_pct_label()
 
 # 让水晶旋转 4 整圈后停在随机朝向。
 func _spin4() -> void:
