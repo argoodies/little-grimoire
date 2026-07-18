@@ -27,8 +27,8 @@ var _uvs: PackedVector2Array              # 对应 UV，用于把冲刷画进遮
 var _mask_img: Image                      # 冲刷遮罩：0=覆尘, 1=已冲刷露出
 var _mask_tex: ImageTexture
 var _circle_btn: Button                     # 底部中央：达标圆圈→交付对勾
-var _pct_label: Label                       # 底部中央：无尘度≥90% 时常显的“9x%”
-var _pct_val := -1                          # 当前显示的整数百分比（-1=未显示）
+var _pct_label: Label                       # 底部中央：无尘度≥90% 时常显的“9x.x%”
+var _pct_val := -1                          # 当前显示的无尘度×10（0.1% 精度；-1=未显示）
 var _circle_pulse_tw: Tween                 # 达标圆圈的 2s 呼吸循环
 var _play_btn: Button                       # 底部中央：▶️ 随机下一关
 var _spinning := false                     # 旋转4周动画中，暂停常规旋转/冲刷
@@ -1009,17 +1009,17 @@ func _hide_bottom_ui() -> void:
 	if _play_btn != null:
 		_play_btn.visible = false
 
-# 无尘度≥90%：底部中央常显“9x%”，随整数百分比变化更新。
-func _show_pct_label(pct: int) -> void:
+# 无尘度≥90%：底部中央常显“9x.x%”，随 0.1% 精度变化更新（tenths=无尘度×10）。
+func _show_pct_label(tenths: int) -> void:
 	if _pct_label == null:
 		return
 	if not _pct_label.visible:
 		_pct_label.modulate.a = 0.0
 		_pct_label.visible = true
 		create_tween().tween_property(_pct_label, "modulate:a", 1.0, 0.3)
-	if pct != _pct_val:
-		_pct_val = pct
-		_pct_label.text = "%d%%" % pct
+	if tenths != _pct_val:
+		_pct_val = tenths
+		_pct_label.text = "%.1f%%" % (tenths / 10.0)
 
 func _hide_pct_label() -> void:
 	_pct_val = -1
@@ -1159,9 +1159,9 @@ func _check_coverage() -> void:
 	if cov >= 1.0:
 		_enter_circle()                        # 100% → 呼吸圆圈（内部会隐藏百分比）
 		return
-	var pct := int(cov * 100.0)                # 精确到整数百分比
-	if pct >= 90:
-		_show_pct_label(pct)                   # 90~99% → 常显“9x%”
+	var tenths := int(floor(cov * 1000.0))     # 无尘度×10：精确到 0.1%（截断，避免未满即显 100.0）
+	if tenths >= 900:
+		_show_pct_label(tenths)                # 90.0%~99.9% → 常显“9x.x%”
 	else:
 		_hide_pct_label()
 
