@@ -1026,13 +1026,13 @@ func _hide_pct_label() -> void:
 	if _pct_label != null:
 		_pct_label.visible = false
 
-# 达标圆圈：2s 周期渐显渐隐呼吸循环。
+# 达标圆圈：1s 周期渐显渐隐呼吸循环，透明度真正 0→100%→0。
 func _start_circle_pulse() -> void:
 	_stop_circle_pulse()
-	_circle_btn.modulate.a = 0.25
+	_circle_btn.modulate.a = 0.0
 	_circle_pulse_tw = create_tween().set_loops()
-	_circle_pulse_tw.tween_property(_circle_btn, "modulate:a", 1.0, 1.0).set_trans(Tween.TRANS_SINE)
-	_circle_pulse_tw.tween_property(_circle_btn, "modulate:a", 0.25, 1.0).set_trans(Tween.TRANS_SINE)
+	_circle_pulse_tw.tween_property(_circle_btn, "modulate:a", 1.0, 0.5).set_trans(Tween.TRANS_SINE)
+	_circle_pulse_tw.tween_property(_circle_btn, "modulate:a", 0.0, 0.5).set_trans(Tween.TRANS_SINE)
 
 func _stop_circle_pulse() -> void:
 	if _circle_pulse_tw != null and _circle_pulse_tw.is_valid():
